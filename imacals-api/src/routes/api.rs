@@ -25,6 +25,9 @@ pub fn init(cfg: &mut web::ServiceConfig) {
                 .route("/{id}", put().to(product_controller::update))
                 .route("/{id}", delete().to(product_controller::delete))
                 .route("/{id}/image", post().to(product_controller::upload_image))
+                .route("/{id}/images", post().to(product_controller::upload_image))
+                .route("/{id}/images/{file_id}/default", put().to(product_controller::set_default_image))
+                .route("/{id}/images/{file_id}", delete().to(product_controller::delete_image))
         )
         .service(
             web::scope("/categories")

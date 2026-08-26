@@ -11,6 +11,7 @@ const router = useRouter();
 const { add } = useCart();
 
 const product: Ref<Product | null> = ref(null);
+const activeImage: Ref<string | null> = ref(null);
 const quantity: Ref<number>        = ref(1);
 const loading: Ref<boolean>        = ref(true);
 const error: Ref<string | null>    = ref(null);
@@ -20,6 +21,7 @@ onMounted(async () => {
   try {
     const found = await catalogService.findProduct(route.params.slug as string);
     product.value  = found;
+    activeImage.value = (found.images && found.images.length > 0) ? found.images[0] : found.image_url;
     // Open on the smallest quantity the warehouse will actually pick.
     quantity.value = found.min_order_quantity;
   } catch (e: unknown) {
@@ -49,9 +51,36 @@ function buyNow(): void {
     <p v-else-if="error" class="state-msg state-msg--error">{{ error }}</p>
 
     <div v-else-if="product" class="detail">
-      <div class="media">
-        <img v-if="product.image_url" :src="product.image_url" :alt="product.name" class="media-img" />
-        <span v-else class="media-placeholder" aria-hidden="true">{{ product.name.charAt(0) }}</span>
+      <div class="media-column">
+        <div class="media-main">
+          <img
+            v-if="activeImage || product.image_url"
+            :src="(activeImage || product.image_url)!"
+            :alt="product.name"
+            class="media-img"
+          />
+          <span v-else class="media-placeholder" aria-hidden="true">{{ product.name.charAt(0) }}</span>
+        </div>
+
+        <!-- Thumbnail Gallery -->
+        <div
+          v-if="product.images && product.images.length > 1"
+          class="gallery-thumbs"
+          role="tablist"
+          aria-label="Product images"
+        >
+          <button
+            v-for="(imgUrl, idx) in product.images"
+            :key="idx"
+            type="button"
+            class="thumb-btn"
+            :class="{ 'thumb-btn--active': (activeImage || product.image_url) === imgUrl }"
+            :aria-label="'View image ' + (idx + 1)"
+            @click="activeImage = imgUrl"
+          >
+            <img :src="imgUrl" :alt="product.name + ' thumbnail ' + (idx + 1)" class="thumb-img" />
+          </button>
+        </div>
       </div>
 
       <div class="info">
@@ -124,7 +153,13 @@ function buyNow(): void {
   .detail { grid-template-columns: 1fr; }
 }
 
-.media {
+.media-column {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.media-main {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -145,6 +180,43 @@ function buyNow(): void {
   font-family: var(--font-display);
   font-size: 5rem;
   color: var(--color-secondary);
+}
+
+.gallery-thumbs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.thumb-btn {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: var(--rounded-md);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  overflow: hidden;
+  padding: 0;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.15s ease;
+}
+
+.thumb-btn:hover {
+  border-color: var(--color-primary);
+  transform: translateY(-1px);
+}
+
+.thumb-btn--active {
+  border-color: var(--color-tertiary);
+  box-shadow: 0 0 0 1px var(--color-tertiary);
+}
+
+.thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .title {

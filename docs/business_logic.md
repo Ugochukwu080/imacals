@@ -269,6 +269,7 @@ All valid `type` values are defined as a Rust enum (`FileType`) and stored as sn
 | `FileType::UserInitials` | `user-initials` | `users` | A user's initials image |
 | `FileType::UserProofOfFunds` | `user-proof-of-funds` | `users` | Proof-of-funds document |
 | `FileType::ProductImage` | `product-image` | `products` | Catalogue photo for a product |
+| `FileType::ProductImageDefault` | `product-image-default` | `products` | Primary / default catalogue photo for a product |
 | `FileType::OrderAttachment` | `order-attachment` | `orders` | Proof of payment, waybill, proof of delivery |
 
 `ProductImage` and `OrderAttachment` have no owning table yet — they are the file types §3 will
