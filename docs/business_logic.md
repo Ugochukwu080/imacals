@@ -62,22 +62,19 @@ Describe what a person **does** — their profession or function — not what th
 Job title entries with `organization_id IS NULL` are global/platform defaults available to all orgs.
 Orgs can also create custom job titles scoped to their own `organization_id`.
 
-> **These rows are still the renovation-era set.** `20260510222220_create_organization_user_role_table`
-> seeds `ai`, `broker`, `contractor`, `hml`, `insurance`, `operator`, `project-manager`, `realtor` —
-> none of which describe an Imacals job. They are left in place because nothing has replaced them
-> yet, and code still reads them (`system_user_eligible`, the proof-of-funds gate on the user
-> profile). Replacing them with the real set — order desk, warehouse picker, dispatch rider,
-> delivery manager, accounts — is a migration that has not been written.
-
-The job titles Imacals actually needs, for whoever writes that migration:
+The Imacals ecommerce and distribution job titles (seeded in `20260826120000_seed_imacals_organization_user_roles.up.sql`):
 
 | Job Title | Key | Description |
 |---|---|---|
 | Order Desk | `order-desk` | Takes phone orders and enters them on the customer's behalf. |
-| Warehouse | `warehouse` | Picks and packs orders in the Aba warehouse; adjusts stock. |
-| Dispatch | `dispatch` | Assigns orders to vehicles and routes; confirms delivery. |
+| Warehouse Picker | `warehouse` | Picks and packs orders in the Aba warehouse; adjusts stock. |
+| Dispatch Manager | `dispatch` | Assigns orders to vehicles and routes; confirms delivery. |
 | Rider / Driver | `rider` | Carries the load and captures proof of delivery. |
-| Accounts | `accounts` | Reconciles payments, issues refunds. |
+| Accounts / Finance | `accounts` | Reconciles payments, issues refunds. |
+| Sales Representative | `sales-rep` | Handles client relationships and bulk wholesale orders. |
+| Store Manager | `store-manager` | Oversees warehouse and store distribution operations. |
+| Customer Support | `customer-support` | Assists customers with enquiries and order assistance. |
+| Customer | `customer` | Online and retail customer account. |
 
 ---
 
