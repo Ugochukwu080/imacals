@@ -1,6 +1,7 @@
 import { ref, computed, type Ref, type ComputedRef } from 'vue';
 import { authService, type User, type RegisterPayload, type LoginPayload, type UpdateProfilePayload } from '@/services/auth';
 import { ApiException } from '@/services/api';
+import { clearWishlist } from '@/composables/useWishlist';
 
 const token = ref<string | null>(localStorage.getItem('token'));
 const user  = ref<User | null>(null);
@@ -64,6 +65,9 @@ export function useAuth(): {
     token.value = null;
     user.value  = null;
     localStorage.removeItem('token');
+    // The wishlist cache is a module singleton — drop it so the next sign-in never
+    // momentarily shows the previous customer's lists or badge count.
+    clearWishlist();
   }
 
   async function fetchMe(): Promise<void> {

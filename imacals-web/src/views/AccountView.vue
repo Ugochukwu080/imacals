@@ -161,6 +161,10 @@ onMounted(async () => {
               <span>Track an existing order</span>
               <span aria-hidden="true">→</span>
             </RouterLink>
+            <RouterLink class="action-link" to="/wishlists">
+              <span>My wishlists</span>
+              <span aria-hidden="true">→</span>
+            </RouterLink>
             <RouterLink class="action-link" to="/catalog">
               <span>Browse wholesale catalogue</span>
               <span aria-hidden="true">→</span>

@@ -5,6 +5,7 @@ use crate::controllers::api::{
     user_document_controller, user_bank_account_controller,
     integration_controller, attribute_controller,
     catalog_controller, product_controller, category_controller,
+    customer_controller, wishlist_controller,
 };
 use actix_web::web;
 use actix_web::web::{delete, get, post, put};
