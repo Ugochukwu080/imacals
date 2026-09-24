@@ -182,9 +182,10 @@ test.describe('Product page → save to wishlist', () => {
     await page.goto('/product/rice-50kg');
     await page.getByRole('button', { name: 'Save to wishlist' }).click();
 
-    expect(addItemPosted).toBe(true);
+    // Wait for the UI to settle first — the create→refresh→add chain spans several requests.
     await expect(page.getByRole('status')).toContainText('Saved to');
     await expect(page.getByRole('status')).toContainText('Saved items');
+    expect(addItemPosted).toBe(true);
   });
 
   test('creating a brand-new list on the product page goes through create then add-item', async ({ page }) => {
@@ -215,6 +216,10 @@ test.describe('Product page → save to wishlist', () => {
     await page.goto('/product/rice-50kg');
     await page.getByRole('button', { name: 'Save to wishlist' }).click();
 
+    // Wait for the status confirmation — asserting the flags synchronously races the
+    // create→refresh→add-item chain, which spans three mocked requests.
+    await expect(page.getByRole('status')).toContainText('Saved to');
+    await expect(page.getByRole('status')).toContainText('Saved items');
     expect(created).toBe(true);
     expect(added).toBe(true);
   });
