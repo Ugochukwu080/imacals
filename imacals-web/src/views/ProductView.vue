@@ -3,12 +3,16 @@ import { ref, onMounted, type Ref } from 'vue';
 import { useRoute, useRouter, RouterLink } from 'vue-router';
 import { catalogService, formatNaira, type Product } from '@/services/catalog';
 import { useCart } from '@/composables/useCart';
+import { useWishlist } from '@/composables/useWishlist';
+import { useAuth } from '@/composables/useAuth';
 import { ApiException } from '@/services/api';
 import { SITE } from '@/site';
 
 const route  = useRoute();
 const router = useRouter();
 const { add } = useCart();
+const { isAuthenticated } = useAuth();
+const { lists, refresh: refreshWishlist, create: createWishlist, addItem } = useWishlist();
 
 const product: Ref<Product | null> = ref(null);
 const activeImage: Ref<string | null> = ref(null);
@@ -16,6 +20,10 @@ const quantity: Ref<number>        = ref(1);
 const loading: Ref<boolean>        = ref(true);
 const error: Ref<string | null>    = ref(null);
 const added: Ref<boolean>          = ref(false);
+
+const savedTo: Ref<string | null> = ref(null);
+const savingWishlist: Ref<boolean> = ref(false);
+const wishlistError: Ref<string | null> = ref(null);
 
 onMounted(async () => {
   try {
@@ -31,6 +39,7 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+  if (isAuthenticated.value) await refreshWishlist();
 });
 
 function addToCart(): void {
@@ -42,6 +51,30 @@ function addToCart(): void {
 function buyNow(): void {
   addToCart();
   void router.push({ name: 'cart' });
+}
+
+async function saveToWishlist(): Promise<void> {
+  if (!product.value || !isAuthenticated.value) {
+    await router.push({ name: 'login', query: { redirect: route.fullPath } });
+    return;
+  }
+  savingWishlist.value = true;
+  wishlistError.value = null;
+  try {
+    let target = lists.value[0] ?? null;
+    if (!target) {
+      const created = await createWishlist('Saved items');
+      if (!created) throw new Error('Could not create a list.');
+      target = created;
+    }
+    const detail = await addItem(target.id, product.value.id);
+    if (!detail) throw new Error('Could not save this product.');
+    savedTo.value = target.name;
+  } catch (e: unknown) {
+    wishlistError.value = e instanceof Error ? e.message : 'Could not save this product.';
+  } finally {
+    savingWishlist.value = false;
+  }
 }
 </script>
 
@@ -126,6 +159,23 @@ function buyNow(): void {
             <!-- The one Tertiary action on this screen. -->
             <button class="btn-primary" type="button" @click="buyNow">Add and view cart</button>
             <button class="btn-secondary" type="button" @click="addToCart">Add to cart</button>
+          </div>
+
+          <div class="wishlist-row">
+            <button
+              class="btn-secondary"
+              type="button"
+              :disabled="savingWishlist"
+              @click="saveToWishlist"
+            >
+              {{ savingWishlist ? 'Saving…' : (savedTo ? 'Saved again' : 'Save to wishlist') }}
+            </button>
+            <p v-if="savedTo" class="saved-note" role="status">
+              Saved to <RouterLink class="inline-link" :to="`/wishlists`">{{ savedTo }}</RouterLink>
+            </p>
+            <p v-else-if="wishlistError" class="saved-note saved-note--error" role="alert">
+              {{ wishlistError }}
+            </p>
           </div>
         </div>
 
@@ -280,6 +330,25 @@ function buyNow(): void {
   flex-wrap: wrap;
   gap: var(--spacing-sm);
   margin-top: var(--spacing-md);
+}
+
+.wishlist-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-sm);
+}
+
+.saved-note {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  color: var(--color-secondary);
+}
+
+.saved-note--error {
+  color: var(--color-tertiary);
 }
 
 .oos-note,

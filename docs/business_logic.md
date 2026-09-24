@@ -119,7 +119,7 @@ the storefront already assumes. `imacals-web` calls `/catalog/products`, `/catal
 | `products` | Built | Tenant & domain-scoped (`unit_price_kobo`, `unit`, `min_order_quantity`, `in_stock`, image file link). |
 | `warehouses` | To build | The Aba base warehouse is the first row. Orders are picked from a warehouse. |
 | `stock_levels` | To build | Per `(product_id, warehouse_id)`. Never a bare column on `products`. |
-| `customers` | To build | A buyer. May exist without a `users` row — phone orders create one from a name and number. |
+| `customers` | Built | Tenant-scoped buyer record. `user_id` links to the storefront account when one exists; phone-only customers have `user_id = NULL`. |
 | `customer_addresses` | To build | Multiple per customer; one default. |
 | `orders` | To build | Carries `channel` (`online` \| `phone`), `reference`, `status`, totals, warehouse. |
 | `order_items` | To build | Line snapshot: unit price copied at order time so later price changes never rewrite history. |
@@ -127,6 +127,8 @@ the storefront already assumes. `imacals-web` calls `/catalog/products`, `/catal
 | `delivery_zones` | To build | Ties a geographic area to a tariff. Should reuse `polygons` / `zones`. |
 | `delivery_fees` | To build | Fee per zone, per weight or value band. |
 | `payments` | To build | Against an order. Partial payment and refund must both be representable. |
+| `wishlists` | Built | Saved list of products owned by a customer. Tenant-scoped; soft-cascades from `customers`. |
+| `wishlist_items` | Built | Line in a wishlist. Unique on `(wishlist_id, product_id)` so the same product cannot appear twice. Soft-cascades from `wishlists` and `products`. |
 
 ### Rules the storefront already depends on
 
