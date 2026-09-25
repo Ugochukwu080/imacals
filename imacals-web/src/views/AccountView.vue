@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, type Ref, type ComputedRef } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, type Ref, type ComputedRef } from 'vue';
 import { useRouter, useRoute, RouterLink } from 'vue-router';
 import { useAuth, ApiException } from '@/composables/useAuth';
 import { useCart } from '@/composables/useCart';
@@ -53,6 +53,11 @@ const profileForm = ref({
   last_name: '',
   email: '',
   phone: '',
+  street: '',
+  landmark: '',
+  city: 'Aba',
+  state: 'Abia State',
+  instructions: '',
 });
 
 function showToast(msg: string): void {
@@ -62,13 +67,23 @@ function showToast(msg: string): void {
   }, 3500);
 }
 
+// Live computed addresses
+const defaultAddress: ComputedRef<CustomerAddress | null> = computed(() => {
+  return addresses.value.find((a) => a.is_default) || addresses.value[0] || null;
+});
+
+const liveAddressText: ComputedRef<string> = computed(() => {
+  if (!defaultAddress.value) return '';
+  const landmarkPart = defaultAddress.value.landmark ? ` (${defaultAddress.value.landmark})` : '';
+  return `${defaultAddress.value.street}${landmarkPart}, ${defaultAddress.value.city}, ${defaultAddress.value.state}`;
+});
+
 // Stats computed
 const activeOrders: ComputedRef<CustomerOrder[]> = computed(() =>
   orders.value.filter((o) => ['pending', 'confirmed', 'picked', 'dispatched'].includes(o.status)),
 );
 
 const spotlightOrder: ComputedRef<CustomerOrder | null> = computed(() => {
-  // Return the first active order (or latest order)
   return activeOrders.value[0] || null;
 });
 
@@ -101,33 +116,52 @@ const filteredOrders: ComputedRef<CustomerOrder[]> = computed(() => {
 function initProfileForm(): void {
   if (user.value) {
     profileForm.value = {
-      first_name: user.value.first_name ?? '',
-      last_name:  user.value.last_name ?? '',
-      email:      user.value.email ?? '',
-      phone:      user.value.phone ?? '',
+      first_name:   user.value.first_name ?? '',
+      last_name:    user.value.last_name ?? '',
+      email:        user.value.email ?? '',
+      phone:        user.value.phone ?? '',
+      street:       defaultAddress.value?.street ?? '',
+      landmark:     defaultAddress.value?.landmark ?? '',
+      city:         defaultAddress.value?.city ?? 'Aba',
+      state:        defaultAddress.value?.state ?? 'Abia State',
+      instructions: defaultAddress.value?.instructions ?? '',
     };
   }
 }
 
 async function loadData(): Promise<void> {
   const userId = user.value?.id;
-  loadingOrders.value = true;
+  const fullName = user.value ? `${user.value.first_name} ${user.value.last_name}`.trim() : undefined;
+  const userPhone = user.value?.phone || undefined;
+  const userEmail = user.value?.email || undefined;
+
   loadingAddresses.value = true;
+  loadingOrders.value = true;
 
   try {
-    orders.value = await customerOrderService.listOrders(userId);
-  } catch (err) {
-    console.error('Failed to load orders:', err);
-  } finally {
-    loadingOrders.value = false;
-  }
-
-  try {
-    addresses.value = await customerAddressService.listAddresses(userId);
+    addresses.value = await customerAddressService.listAddresses(userId, {
+      name: fullName,
+      phone: userPhone,
+    });
   } catch (err) {
     console.error('Failed to load addresses:', err);
   } finally {
     loadingAddresses.value = false;
+  }
+
+  try {
+    orders.value = await customerOrderService.listOrders(userId, {
+      name: fullName,
+      phone: userPhone,
+      email: userEmail,
+      address: liveAddressText.value || undefined,
+      city: defaultAddress.value?.city,
+      state: defaultAddress.value?.state,
+    });
+  } catch (err) {
+    console.error('Failed to load orders:', err);
+  } finally {
+    loadingOrders.value = false;
   }
 
   try {
@@ -143,22 +177,69 @@ function setTab(tab: TabKey): void {
   router.replace({ query: { ...route.query, tab } });
 }
 
-// Profile update
+// Profile update with live address sync
 async function saveProfile(): Promise<void> {
   profileError.value   = null;
   profileSuccess.value = false;
   savingProfile.value  = true;
 
   try {
+    const updatedFname = profileForm.value.first_name.trim();
+    const updatedLname = profileForm.value.last_name.trim();
+    const updatedEmail = profileForm.value.email.trim();
+    const updatedPhone = profileForm.value.phone.trim() || undefined;
+
     await updateProfile({
-      first_name: profileForm.value.first_name.trim(),
-      last_name:  profileForm.value.last_name.trim(),
-      email:      profileForm.value.email.trim(),
-      phone:      profileForm.value.phone.trim() || undefined,
+      first_name: updatedFname,
+      last_name:  updatedLname,
+      email:      updatedEmail,
+      phone:      updatedPhone,
     });
+
     profileSuccess.value = true;
     editingProfile.value = false;
-    showToast('Personal details updated successfully');
+
+    // Sync live default address recipient details & address fields with updated profile
+    const userId = user.value?.id;
+    const fullName = `${updatedFname} ${updatedLname}`.trim();
+
+    if (userId && profileForm.value.street.trim()) {
+      await customerAddressService.saveLivePrimaryAddress(
+        {
+          recipient_name: fullName,
+          phone: updatedPhone || defaultAddress.value?.phone || '',
+          street: profileForm.value.street.trim(),
+          landmark: profileForm.value.landmark.trim() || undefined,
+          city: profileForm.value.city.trim() || 'Aba',
+          state: profileForm.value.state.trim() || 'Abia State',
+          instructions: profileForm.value.instructions.trim() || undefined,
+        },
+        userId,
+      );
+      addresses.value = await customerAddressService.listAddresses(userId);
+    } else if (defaultAddress.value && userId) {
+      await customerAddressService.updateAddress(
+        defaultAddress.value.id,
+        {
+          recipient_name: fullName,
+          phone: updatedPhone || defaultAddress.value.phone,
+        },
+        userId,
+      );
+      addresses.value = await customerAddressService.listAddresses(userId);
+    }
+
+    orders.value = await customerOrderService.listOrders(userId, {
+      name: fullName,
+      phone: updatedPhone,
+      email: updatedEmail,
+      address: liveAddressText.value,
+      city: defaultAddress.value?.city,
+      state: defaultAddress.value?.state,
+    });
+
+    showToast('Personal details and live address updated successfully');
+    initProfileForm();
     setTimeout(() => { profileSuccess.value = false; }, 3000);
   } catch (e: unknown) {
     profileError.value = e instanceof ApiException || e instanceof Error
@@ -172,9 +253,10 @@ async function saveProfile(): Promise<void> {
 // Addresses
 function openAddAddressModal(): void {
   editingAddressId.value = null;
+  const fullName = user.value ? `${user.value.first_name} ${user.value.last_name}`.trim() : '';
   addressForm.value = {
-    label: 'Main Store',
-    recipient_name: user.value ? `${user.value.first_name} ${user.value.last_name}`.trim() : '',
+    label: addresses.value.length === 0 ? 'Main Store' : 'Warehouse / Shop',
+    recipient_name: fullName,
     phone: user.value?.phone || '',
     street: '',
     landmark: '',
@@ -215,19 +297,38 @@ async function saveAddress(): Promise<void> {
   const userId = user.value?.id;
   if (editingAddressId.value) {
     await customerAddressService.updateAddress(editingAddressId.value, addressForm.value, userId);
-    showToast('Address updated');
+    showToast('Delivery address updated');
   } else {
     await customerAddressService.createAddress(addressForm.value, userId);
-    showToast('Address added to your address book');
+    showToast('Delivery address saved as live destination');
   }
   closeAddressModal();
   addresses.value = await customerAddressService.listAddresses(userId);
+
+  // Keep live orders in sync with new default address
+  const fullName = user.value ? `${user.value.first_name} ${user.value.last_name}`.trim() : undefined;
+  orders.value = await customerOrderService.listOrders(userId, {
+    name: fullName,
+    phone: user.value?.phone || undefined,
+    address: liveAddressText.value,
+    city: defaultAddress.value?.city,
+    state: defaultAddress.value?.state,
+  });
+  initProfileForm();
 }
 
 async function setDefaultAddress(id: string): Promise<void> {
   const userId = user.value?.id;
   await customerAddressService.setDefaultAddress(id, userId);
   addresses.value = await customerAddressService.listAddresses(userId);
+
+  // Sync orders with new live default address
+  orders.value = await customerOrderService.listOrders(userId, {
+    address: liveAddressText.value,
+    city: defaultAddress.value?.city,
+    state: defaultAddress.value?.state,
+  });
+  initProfileForm();
   showToast('Default delivery address updated');
 }
 
@@ -235,6 +336,7 @@ async function deleteAddress(id: string): Promise<void> {
   const userId = user.value?.id;
   await customerAddressService.deleteAddress(id, userId);
   addresses.value = await customerAddressService.listAddresses(userId);
+  initProfileForm();
   showToast('Address removed');
 }
 
@@ -308,14 +410,30 @@ watch(
   { immediate: true },
 );
 
+function handleExternalAddressOrUserChange(): void {
+  loadData().then(() => initProfileForm());
+}
+
 onMounted(async () => {
   if (!isAuthenticated.value) {
     router.push('/login?redirect=/account');
     return;
   }
   await fetchMe();
-  initProfileForm();
   await loadData();
+  initProfileForm();
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('imacals:address-changed', handleExternalAddressOrUserChange);
+    window.addEventListener('imacals:user-updated', handleExternalAddressOrUserChange);
+  }
+});
+
+onUnmounted(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('imacals:address-changed', handleExternalAddressOrUserChange);
+    window.removeEventListener('imacals:user-updated', handleExternalAddressOrUserChange);
+  }
 });
 </script>
 
@@ -447,7 +565,7 @@ onMounted(async () => {
           </div>
           <p class="metric-value">{{ addresses.length }}</p>
           <p class="metric-desc">
-            Primary: {{ addresses.find((a) => a.is_default)?.city || 'Aba' }}
+            {{ defaultAddress ? `Live: ${defaultAddress.label} (${defaultAddress.city})` : 'No address set' }}
           </p>
         </div>
 
@@ -502,7 +620,9 @@ onMounted(async () => {
         <div class="spotlight-details">
           <div class="spotlight-info-col">
             <span class="info-label">Destination Address</span>
-            <p class="info-val">{{ spotlightOrder.delivery_address }}, {{ spotlightOrder.city }}</p>
+            <p class="info-val">
+              {{ defaultAddress ? liveAddressText : (spotlightOrder.delivery_address + ', ' + spotlightOrder.city) }}
+            </p>
           </div>
           <div class="spotlight-info-col">
             <span class="info-label">Order Items</span>
@@ -521,6 +641,56 @@ onMounted(async () => {
           <button class="btn-secondary" type="button" @click="selectedOrder = spotlightOrder">
             View Order Receipt
           </button>
+        </div>
+      </section>
+
+      <!-- Live Primary Delivery Address Card -->
+      <section class="card live-address-card">
+        <div class="card-head">
+          <div>
+            <div class="live-addr-badge-row">
+              <span class="eyebrow">Primary Delivery Location</span>
+              <span v-if="defaultAddress" class="default-badge">LIVE DEFAULT</span>
+            </div>
+            <h2 class="card-title">{{ defaultAddress ? defaultAddress.label : 'No Delivery Address Set' }}</h2>
+            <p class="card-subtitle">
+              {{ defaultAddress ? 'What you set here is your active live dispatch destination across the store' : 'Add your address to enable direct deliveries from our Aba warehouse' }}
+            </p>
+          </div>
+          <button v-if="defaultAddress" class="btn-edit" type="button" @click="openEditAddressModal(defaultAddress)">
+            Edit Address
+          </button>
+          <button v-else class="btn-primary" type="button" @click="openAddAddressModal">
+            + Add Delivery Address
+          </button>
+        </div>
+
+        <div v-if="defaultAddress" class="live-address-details">
+          <div class="live-address-grid">
+            <div class="live-col">
+              <span class="detail-label">Recipient & Receiving Phone</span>
+              <p class="live-val"><strong>{{ defaultAddress.recipient_name }}</strong></p>
+              <p class="live-phone mono-code">{{ defaultAddress.phone || user?.phone || 'No phone set' }}</p>
+            </div>
+            <div class="live-col live-col--wide">
+              <span class="detail-label">Street Address & Landmark</span>
+              <p class="live-val">{{ defaultAddress.street }}</p>
+              <p v-if="defaultAddress.landmark" class="live-landmark">
+                <span class="landmark-tag">Landmark:</span> {{ defaultAddress.landmark }}
+              </p>
+              <p class="live-city-state">{{ defaultAddress.city }}, {{ defaultAddress.state }}</p>
+            </div>
+            <div v-if="defaultAddress.instructions" class="live-col">
+              <span class="detail-label">Special Offloading Instructions</span>
+              <p class="live-instructions"><em>"{{ defaultAddress.instructions }}"</em></p>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="live-address-empty">
+          <p class="empty-note">
+            You do not have a default delivery address set yet. What you set as your address will immediately display here and autofill checkout.
+          </p>
         </div>
       </section>
 
@@ -912,6 +1082,36 @@ onMounted(async () => {
               <span class="field-hint">Primary number Aba warehouse drivers call before delivery.</span>
             </div>
 
+            <div class="field-divider">
+              <span class="eyebrow">Live Primary Delivery Address</span>
+            </div>
+
+            <div class="field">
+              <label class="field-label" for="edit_street">Street address</label>
+              <input id="edit_street" v-model="profileForm.street" class="field-input" type="text" placeholder="e.g. 14 Faulks Road" />
+            </div>
+
+            <div class="field">
+              <label class="field-label" for="edit_landmark">Landmark / Directions</label>
+              <input id="edit_landmark" v-model="profileForm.landmark" class="field-input" type="text" placeholder="e.g. Opposite Ariaria Market Gate 2" />
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label class="field-label" for="edit_city">City</label>
+                <input id="edit_city" v-model="profileForm.city" class="field-input" type="text" placeholder="Aba" />
+              </div>
+              <div class="field">
+                <label class="field-label" for="edit_state">State</label>
+                <input id="edit_state" v-model="profileForm.state" class="field-input" type="text" placeholder="Abia State" />
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label" for="edit_instructions">Offloading / delivery instructions</label>
+              <textarea id="edit_instructions" v-model="profileForm.instructions" class="field-input" rows="2" placeholder="e.g. Call on arrival before offloading"></textarea>
+            </div>
+
             <div class="form-actions">
               <button class="btn-secondary" type="button" :disabled="savingProfile" @click="editingProfile = false">
                 Cancel
@@ -938,6 +1138,18 @@ onMounted(async () => {
             <div class="detail-row">
               <span class="detail-label">Customer ID</span>
               <span class="detail-val mono-code">{{ user?.id || '—' }}</span>
+            </div>
+            <div class="detail-row">
+              <span class="detail-label">Primary Delivery Address</span>
+              <div class="detail-val">
+                <template v-if="defaultAddress">
+                  <p class="live-addr-line"><strong>{{ defaultAddress.street }}</strong></p>
+                  <p v-if="defaultAddress.landmark" class="sub-detail">Landmark: {{ defaultAddress.landmark }}</p>
+                  <p class="sub-detail">{{ defaultAddress.city }}, {{ defaultAddress.state }}</p>
+                  <p v-if="defaultAddress.instructions" class="sub-detail notes-italics">"{{ defaultAddress.instructions }}"</p>
+                </template>
+                <span v-else class="text-muted">No address set yet</span>
+              </div>
             </div>
           </div>
         </section>
@@ -1586,6 +1798,85 @@ onMounted(async () => {
   display: flex;
   gap: var(--spacing-sm);
   justify-content: flex-end;
+}
+
+/* Live Primary Address Card */
+.live-address-card {
+  margin-bottom: var(--spacing-lg);
+  border-color: var(--color-border);
+}
+
+.live-addr-badge-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: 4px;
+}
+
+.live-address-details {
+  background-color: var(--color-neutral);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+  padding: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+}
+
+.live-address-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr 1fr;
+  gap: var(--spacing-md);
+}
+
+@media (max-width: 768px) {
+  .live-address-grid { grid-template-columns: 1fr; }
+}
+
+.live-col {
+  display: flex;
+  flex-direction: column;
+}
+
+.live-val {
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  color: var(--color-primary);
+}
+
+.live-phone {
+  font-size: 0.85rem;
+  color: var(--color-secondary);
+  margin-top: 2px;
+}
+
+.live-landmark {
+  font-size: 0.8rem;
+  color: var(--color-secondary);
+  margin-top: 2px;
+}
+
+.live-city-state {
+  font-size: 0.85rem;
+  color: var(--color-primary);
+  font-weight: 500;
+  margin-top: 2px;
+}
+
+.live-instructions {
+  font-size: 0.85rem;
+  color: var(--color-secondary);
+}
+
+.live-address-empty {
+  background-color: var(--color-neutral);
+  border-radius: var(--rounded-md);
+  padding: var(--spacing-md);
+  margin-top: var(--spacing-sm);
+}
+
+.empty-note {
+  font-size: 0.85rem;
+  color: var(--color-secondary);
+  line-height: 1.45;
 }
 
 /* Split layout */
@@ -2285,6 +2576,32 @@ onMounted(async () => {
   font-size: 0.75rem;
   color: var(--color-secondary);
   margin-top: 4px;
+}
+
+.field-divider {
+  border-top: 1px solid var(--color-divider);
+  padding-top: var(--spacing-sm);
+  margin-top: 4px;
+}
+
+.live-addr-line {
+  margin-bottom: 2px;
+}
+
+.sub-detail {
+  font-size: 0.85rem;
+  color: var(--color-secondary);
+  line-height: 1.4;
+}
+
+.notes-italics {
+  font-style: italic;
+  margin-top: 2px;
+}
+
+.text-muted {
+  color: var(--color-secondary);
+  font-size: 0.85rem;
 }
 
 .form-actions {

@@ -193,4 +193,102 @@ test.describe('Customer Dashboard (/account)', () => {
 
     await expect(page).toHaveURL(/\/cart/);
   });
+
+  test('editing live address on dashboard immediately updates primary location and personal details', async ({ page }) => {
+    await page.goto('/account');
+
+    // Click Edit Address on Primary Delivery Location card
+    await page.getByRole('button', { name: 'Edit Address' }).click();
+
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible();
+
+    await page.locator('#addr_street').fill('84 Azikiwe Road');
+    await page.locator('#addr_landmark').fill('Near CKC Cathedral');
+    await page.locator('#addr_city').fill('Aba');
+
+    await dialog.getByRole('button', { name: 'Update Address' }).click();
+
+    await expect(dialog).not.toBeVisible();
+
+    // Verify Primary Delivery Location card updates live
+    await expect(page.locator('.live-val', { hasText: '84 Azikiwe Road' })).toBeVisible();
+    await expect(page.locator('.live-landmark', { hasText: 'Near CKC Cathedral' })).toBeVisible();
+
+    // Verify Personal Details reflects the updated live address
+    await page.getByRole('button', { name: 'Personal Details' }).click();
+    await expect(page.locator('.detail-val', { hasText: '84 Azikiwe Road' })).toBeVisible();
+  });
+
+  test('setting delivery address during checkout updates live address on customer dashboard', async ({ page }) => {
+    await page.route('**/api/catalog/products*', (route: Route) =>
+      route.fulfill(
+        ok([
+          {
+            id: 'p1',
+            slug: 'rice-50kg',
+            name: 'Long Grain Rice — 50kg Bag',
+            description: 'Parboiled rice',
+            category_slug: 'foodstuff',
+            category_name: 'Foodstuff',
+            unit: 'bag (50kg)',
+            unit_price_kobo: 8_950_000,
+            min_order_quantity: 5,
+            in_stock: true,
+            image_url: null,
+          },
+        ]),
+      ),
+    );
+    await page.route('**/api/orders', (route: Route) =>
+      route.fulfill(
+        ok({
+          id: 'ord-new-chk',
+          reference: 'IMC-999888',
+          status: 'pending',
+          total_kobo: 45_000_000,
+          delivery_fee_kobo: 250_000,
+          placed_at: '2026-09-26T10:00:00Z',
+        }),
+      ),
+    );
+
+    await page.evaluate(() => {
+      const prod = {
+        id: 'p1',
+        slug: 'rice-50kg',
+        name: 'Long Grain Rice — 50kg Bag',
+        description: 'Parboiled rice',
+        category_slug: 'foodstuff',
+        category_name: 'Foodstuff',
+        unit: 'bag (50kg)',
+        unit_price_kobo: 8_950_000,
+        min_order_quantity: 5,
+        in_stock: true,
+        image_url: null,
+      };
+      localStorage.setItem('cart', JSON.stringify([{ product: prod, quantity: 5 }]));
+    });
+
+    await page.goto('/checkout');
+
+    await page.getByLabel('Delivery address').fill('55 Pound Road');
+    await page.getByLabel('Town / city').fill('Aba');
+    await page.locator('#note').fill('Offload near main gate');
+
+    await page.getByRole('button', { name: 'Place order' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Reference IMC-999888' })).toBeVisible();
+
+    // Click link to Customer Dashboard
+    await page.getByRole('link', { name: 'Customer Dashboard' }).click();
+
+    // Verify order reference and delivery address in the order book
+    await expect(page.getByText('IMC-999888')).toBeVisible();
+    await expect(page.getByText('55 Pound Road, Aba')).toBeVisible();
+
+    // Switch to Overview tab to check Primary Delivery Location
+    await page.getByRole('button', { name: 'Overview' }).click();
+    await expect(page.locator('.live-val', { hasText: '55 Pound Road' })).toBeVisible();
+  });
 });

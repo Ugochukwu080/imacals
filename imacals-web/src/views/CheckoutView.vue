@@ -11,7 +11,7 @@ import { ApiException } from '@/services/api';
 import { SITE } from '@/site';
 
 const { lines, subtotalKobo, clear } = useCart();
-const { user, isAuthenticated } = useAuth();
+const { user, isAuthenticated, updateProfile } = useAuth();
 
 const form: Ref<Omit<PlaceOrderInput, 'lines'>> = ref({
   customer_name: '',
@@ -23,12 +23,17 @@ const form: Ref<Omit<PlaceOrderInput, 'lines'>> = ref({
   note: '',
 });
 
+const saveAddressToDashboard: Ref<boolean> = ref(true);
 const savedAddresses: Ref<CustomerAddress[]> = ref([]);
 
 async function loadSavedAddresses(): Promise<void> {
   if (user.value) {
+    const fullName = `${user.value.first_name ?? ''} ${user.value.last_name ?? ''}`.trim();
     try {
-      savedAddresses.value = await customerAddressService.listAddresses(user.value.id);
+      savedAddresses.value = await customerAddressService.listAddresses(user.value.id, {
+        name: fullName || undefined,
+        phone: user.value.phone || undefined,
+      });
       const defaultAddr = savedAddresses.value.find((a) => a.is_default) || savedAddresses.value[0];
       if (defaultAddr && !form.value.delivery_address) {
         applySavedAddress(defaultAddr);
@@ -40,21 +45,22 @@ async function loadSavedAddresses(): Promise<void> {
 }
 
 function applySavedAddress(addr: CustomerAddress): void {
-  const fullAddr = addr.landmark ? `${addr.street} (${addr.landmark})` : addr.street;
-  form.value.delivery_address = fullAddr;
+  form.value.delivery_address = addr.street;
   form.value.city = addr.city;
   form.value.state = addr.state;
   if (addr.phone && !form.value.phone) form.value.phone = addr.phone;
   if (addr.recipient_name && !form.value.customer_name) form.value.customer_name = addr.recipient_name;
-  if (addr.instructions && !form.value.note) form.value.note = addr.instructions;
+  if (addr.instructions || addr.landmark) {
+    form.value.note = addr.instructions || addr.landmark || '';
+  }
 }
 
 function autofillFromUser(): void {
   if (user.value) {
     const fullName = `${user.value.first_name ?? ''} ${user.value.last_name ?? ''}`.trim();
-    if (fullName && !form.value.customer_name) form.value.customer_name = fullName;
-    if (user.value.email && !form.value.email) form.value.email = user.value.email;
-    if (user.value.phone && !form.value.phone) form.value.phone = user.value.phone;
+    if (fullName) form.value.customer_name = fullName;
+    if (user.value.email) form.value.email = user.value.email;
+    if (user.value.phone) form.value.phone = user.value.phone;
     loadSavedAddresses();
   }
 }
@@ -109,6 +115,43 @@ async function submit(): Promise<void> {
       );
     } catch {
       // Non-fatal
+    }
+
+    // Save/update this address as the live default address on the customer dashboard
+    if (user.value && saveAddressToDashboard.value) {
+      try {
+        await customerAddressService.saveOrUpdateFromCheckout(
+          {
+            recipient_name: form.value.customer_name.trim(),
+            phone: form.value.phone.trim(),
+            street: form.value.delivery_address.trim(),
+            city: form.value.city.trim(),
+            state: form.value.state.trim(),
+            landmark: form.value.note?.trim() || undefined,
+            instructions: form.value.note?.trim() || undefined,
+            is_default: true,
+          },
+          user.value.id,
+        );
+      } catch (err) {
+        console.warn('Could not save live checkout address:', err);
+      }
+
+      // Sync customer contact details live if they provided name or phone
+      try {
+        const rawName = form.value.customer_name.trim();
+        const spaceIdx = rawName.indexOf(' ');
+        const fname = spaceIdx > 0 ? rawName.slice(0, spaceIdx) : rawName;
+        const lname = spaceIdx > 0 ? rawName.slice(spaceIdx + 1).trim() : user.value.last_name || '';
+        await updateProfile({
+          first_name: fname || user.value.first_name,
+          last_name: lname,
+          email: form.value.email?.trim() || user.value.email,
+          phone: form.value.phone.trim() || user.value.phone || undefined,
+        });
+      } catch (err) {
+        console.warn('Could not sync user profile from checkout:', err);
+      }
     }
 
     clear();
@@ -206,6 +249,13 @@ async function submit(): Promise<void> {
             <div class="field field--wide">
               <label class="field-label" for="note">Landmark or delivery note (optional)</label>
               <textarea id="note" v-model="form.note" class="field-input note" rows="3"></textarea>
+            </div>
+
+            <div v-if="isAuthenticated" class="field field--wide checkbox-field">
+              <label class="checkbox-label">
+                <input v-model="saveAddressToDashboard" type="checkbox" />
+                <span>Save as my live dispatch location on my customer dashboard</span>
+              </label>
             </div>
           </div>
 
@@ -418,5 +468,26 @@ async function submit(): Promise<void> {
   color: var(--color-primary);
   text-decoration: none;
   border-bottom: 1px solid var(--color-border);
+}
+
+.checkbox-field {
+  margin-top: 4px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-family: var(--font-label);
+  font-size: 0.8rem;
+  color: var(--color-secondary);
+}
+
+.checkbox-label input[type="checkbox"] {
+  accent-color: var(--color-tertiary);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 </style>

@@ -197,19 +197,74 @@ const DEFAULT_SEEDED_ORDERS: CustomerOrder[] = [
   },
 ];
 
+export interface OrderUserDefaults {
+  name?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+}
+
 export const customerOrderService = {
-  async listOrders(userId?: string): Promise<CustomerOrder[]> {
+  async listOrders(userId?: string, defaults?: OrderUserDefaults): Promise<CustomerOrder[]> {
     const key = getStorageKey(userId);
     const stored = localStorage.getItem(key);
+    let list: CustomerOrder[] = [];
     if (!stored) {
-      localStorage.setItem(key, JSON.stringify(DEFAULT_SEEDED_ORDERS));
-      return DEFAULT_SEEDED_ORDERS;
+      list = DEFAULT_SEEDED_ORDERS.map((o) => ({ ...o }));
+      localStorage.setItem(key, JSON.stringify(list));
+    } else {
+      try {
+        list = JSON.parse(stored) as CustomerOrder[];
+      } catch {
+        list = [];
+      }
     }
-    try {
-      return JSON.parse(stored) as CustomerOrder[];
-    } catch {
-      return [];
+
+    if (defaults && list.length > 0) {
+      let changed = false;
+      const updated = list.map((order) => {
+        let name = order.customer_name;
+        let phone = order.phone;
+        let email = order.email;
+        let addr = order.delivery_address;
+        let city = order.city;
+        let state = order.state;
+        let modified = false;
+
+        if (defaults.name && (!name || name === 'Customer')) {
+          name = defaults.name;
+          modified = true;
+        }
+        if (defaults.phone && (!phone || phone === '0803 123 4567')) {
+          phone = defaults.phone;
+          modified = true;
+        }
+        if (defaults.email && (!email || email === 'customer@imacals.com')) {
+          email = defaults.email;
+          modified = true;
+        }
+        if (defaults.address && (order.id === 'ord-seed-1' || !addr || addr.includes('14 Faulks Road'))) {
+          addr = defaults.address;
+          if (defaults.city) city = defaults.city;
+          if (defaults.state) state = defaults.state;
+          modified = true;
+        }
+        if (modified) {
+          changed = true;
+          return { ...order, customer_name: name, phone, email, delivery_address: addr, city, state };
+        }
+        return order;
+      });
+
+      if (changed) {
+        localStorage.setItem(key, JSON.stringify(updated));
+        return updated;
+      }
     }
+
+    return list;
   },
 
   async getOrder(idOrRef: string, userId?: string): Promise<CustomerOrder | null> {

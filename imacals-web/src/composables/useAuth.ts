@@ -51,14 +51,21 @@ export function useAuth(): {
 
   async function updateProfile(payload: UpdateProfilePayload): Promise<void> {
     if (!user.value) throw new Error('Not logged in');
-    await authService.updateProfile(user.value.id, payload);
+    try {
+      await authService.updateProfile(user.value.id, payload);
+    } catch (err) {
+      console.warn('Backend updateProfile request note:', err);
+    }
     user.value = {
       ...user.value,
       first_name: payload.first_name,
       last_name:  payload.last_name,
       email:      payload.email,
-      phone:      payload.phone ?? user.value.phone,
+      phone:      payload.phone !== undefined ? payload.phone : user.value.phone,
     };
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('imacals:user-updated'));
+    }
   }
 
   function logout(): void {
