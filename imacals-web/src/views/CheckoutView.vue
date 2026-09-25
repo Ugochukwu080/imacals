@@ -5,6 +5,8 @@ import { useCart } from '@/composables/useCart';
 import { useAuth } from '@/composables/useAuth';
 import { formatNaira } from '@/services/catalog';
 import { orderService, type PlaceOrderInput, type PlacedOrder } from '@/services/order';
+import { customerAddressService, type CustomerAddress } from '@/services/customerAddress';
+import { customerOrderService } from '@/services/customerOrder';
 import { ApiException } from '@/services/api';
 import { SITE } from '@/site';
 
@@ -21,12 +23,39 @@ const form: Ref<Omit<PlaceOrderInput, 'lines'>> = ref({
   note: '',
 });
 
+const savedAddresses: Ref<CustomerAddress[]> = ref([]);
+
+async function loadSavedAddresses(): Promise<void> {
+  if (user.value) {
+    try {
+      savedAddresses.value = await customerAddressService.listAddresses(user.value.id);
+      const defaultAddr = savedAddresses.value.find((a) => a.is_default) || savedAddresses.value[0];
+      if (defaultAddr && !form.value.delivery_address) {
+        applySavedAddress(defaultAddr);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+}
+
+function applySavedAddress(addr: CustomerAddress): void {
+  const fullAddr = addr.landmark ? `${addr.street} (${addr.landmark})` : addr.street;
+  form.value.delivery_address = fullAddr;
+  form.value.city = addr.city;
+  form.value.state = addr.state;
+  if (addr.phone && !form.value.phone) form.value.phone = addr.phone;
+  if (addr.recipient_name && !form.value.customer_name) form.value.customer_name = addr.recipient_name;
+  if (addr.instructions && !form.value.note) form.value.note = addr.instructions;
+}
+
 function autofillFromUser(): void {
   if (user.value) {
     const fullName = `${user.value.first_name ?? ''} ${user.value.last_name ?? ''}`.trim();
     if (fullName && !form.value.customer_name) form.value.customer_name = fullName;
     if (user.value.email && !form.value.email) form.value.email = user.value.email;
     if (user.value.phone && !form.value.phone) form.value.phone = user.value.phone;
+    loadSavedAddresses();
   }
 }
 
@@ -59,6 +88,29 @@ async function submit(): Promise<void> {
       lines: lines.value.map((l) => ({ product_id: l.product.id, quantity: l.quantity })),
     });
     placed.value = result;
+
+    // Record order to customer dashboard
+    try {
+      const catalogProducts = lines.value.map((l) => ({
+        id: l.product.id,
+        name: l.product.name,
+        slug: l.product.slug,
+        unit: l.product.unit,
+        unit_price_kobo: l.product.unit_price_kobo,
+      }));
+      await customerOrderService.recordPlacedOrder(
+        result,
+        {
+          ...form.value,
+          lines: lines.value.map((l) => ({ product_id: l.product.id, quantity: l.quantity })),
+        },
+        catalogProducts,
+        user.value?.id,
+      );
+    } catch {
+      // Non-fatal
+    }
+
     clear();
   } catch (e: unknown) {
     error.value = e instanceof ApiException || e instanceof Error
@@ -79,7 +131,10 @@ async function submit(): Promise<void> {
         We have your order and the dispatch desk will call {{ form.phone }} to confirm delivery.
         Total {{ formatNaira(placed.total_kobo) }}.
       </p>
-      <RouterLink class="btn-primary confirmed-cta" to="/track">Track this order</RouterLink>
+      <div class="confirmed-actions">
+        <RouterLink class="btn-primary confirmed-cta" to="/track">Track this order</RouterLink>
+        <RouterLink class="btn-secondary confirmed-cta" to="/account?tab=orders">Customer Dashboard</RouterLink>
+      </div>
     </div>
 
     <template v-else>
@@ -100,6 +155,21 @@ async function submit(): Promise<void> {
             <RouterLink class="inline-link" to="/login?redirect=/checkout">
               Sign in to autofill your details
             </RouterLink>
+          </div>
+
+          <div v-else-if="savedAddresses.length > 0" class="saved-addrs-picker">
+            <span class="picker-label">Deliver to saved address:</span>
+            <div class="picker-pills">
+              <button
+                v-for="addr in savedAddresses"
+                :key="addr.id"
+                class="picker-pill"
+                type="button"
+                @click="applySavedAddress(addr)"
+              >
+                {{ addr.label }} ({{ addr.city }})
+              </button>
+            </div>
           </div>
 
           <div class="field-grid">
@@ -290,11 +360,58 @@ async function submit(): Promise<void> {
   margin: var(--spacing-md) 0;
 }
 
+.confirmed-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
 .confirmed-cta,
 .empty-cta {
   display: inline-block;
   text-decoration: none;
   margin-top: var(--spacing-md);
+}
+
+.saved-addrs-picker {
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+  padding: 10px 14px;
+  margin-bottom: var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.picker-label {
+  font-family: var(--font-label);
+  font-size: 0.7rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--color-secondary);
+}
+
+.picker-pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.picker-pill {
+  background-color: var(--color-neutral);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-sm);
+  color: var(--color-primary);
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+
+.picker-pill:hover {
+  border-color: var(--color-primary);
 }
 
 .inline-link {

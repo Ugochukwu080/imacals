@@ -141,6 +141,11 @@ the storefront already assumes. `imacals-web` calls `/catalog/products`, `/catal
 - **`reference` is customer-facing** and is read aloud on the phone — short, unambiguous, no
   lookalike characters. Both channels get one from the same sequence.
 - **Delivery fee is quoted at checkout**, not in the cart, because it depends on the destination.
+- **Customer dashboard (`/account`)**: Unified portal for customers at `imacals.com`. Displays account
+  overview, live metrics, active order tracker spotlight with Aba warehouse dispatch progress, order book
+  (both online checkout and Aba order desk phone orders with status history, receipts, and 1-click re-order),
+  saved delivery address book with default selection and Aba/regional landmarks, wishlists overview, and
+  customer contact profile.
 
 ### Order status flow
 
