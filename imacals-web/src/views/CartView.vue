@@ -1,10 +1,25 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router';
 import { useCart } from '@/composables/useCart';
-import { formatNaira } from '@/services/catalog';
+import {
+  formatNaira,
+  effectivePriceKobo,
+  isDiscounted,
+  discountSavingsKobo,
+  discountPercent,
+} from '@/services/catalog';
 import { SITE } from '@/site';
 
-const { lines, itemCount, subtotalKobo, setQuantity, remove, clear } = useCart();
+const {
+  lines,
+  itemCount,
+  subtotalKobo,
+  originalSubtotalKobo,
+  totalSavingsKobo,
+  setQuantity,
+  remove,
+  clear,
+} = useCart();
 </script>
 
 <template>
@@ -26,11 +41,22 @@ const { lines, itemCount, subtotalKobo, setQuantity, remove, clear } = useCart()
             <RouterLink class="line-name" :to="`/product/${line.product.slug}`">
               {{ line.product.name }}
             </RouterLink>
-            <p class="line-meta">
-              {{ formatNaira(line.product.unit_price_kobo) }} / {{ line.product.unit }}
-              <template v-if="line.product.min_order_quantity > 1">
-                · minimum {{ line.product.min_order_quantity }}
+            <div class="line-meta">
+              <template v-if="isDiscounted(line.product)">
+                <span class="line-price-discounted">{{ formatNaira(effectivePriceKobo(line.product)) }}</span>
+                <del class="line-price-original">{{ formatNaira(line.product.unit_price_kobo) }}</del>
+                <span class="line-discount-tag">-{{ discountPercent(line.product) }}%</span>
               </template>
+              <template v-else>
+                <span>{{ formatNaira(line.product.unit_price_kobo) }}</span>
+              </template>
+              <span class="line-unit">/ {{ line.product.unit }}</span>
+              <template v-if="line.product.min_order_quantity > 1">
+                · min {{ line.product.min_order_quantity }}
+              </template>
+            </div>
+            <p v-if="isDiscounted(line.product)" class="line-savings">
+              Save {{ formatNaira(discountSavingsKobo(line.product) * line.quantity) }}
             </p>
           </div>
 
@@ -46,7 +72,7 @@ const { lines, itemCount, subtotalKobo, setQuantity, remove, clear } = useCart()
             />
           </div>
 
-          <p class="line-total">{{ formatNaira(line.product.unit_price_kobo * line.quantity) }}</p>
+          <p class="line-total">{{ formatNaira(effectivePriceKobo(line.product) * line.quantity) }}</p>
 
           <button class="line-remove" type="button" @click="remove(line.product.id)">Remove</button>
         </article>
@@ -61,7 +87,15 @@ const { lines, itemCount, subtotalKobo, setQuantity, remove, clear } = useCart()
           <span class="summary-label">Items</span>
           <span class="summary-value">{{ itemCount }}</span>
         </div>
-        <div class="summary-row">
+        <div v-if="totalSavingsKobo > 0" class="summary-row">
+          <span class="summary-label">Regular total</span>
+          <span class="summary-value"><del>{{ formatNaira(originalSubtotalKobo) }}</del></span>
+        </div>
+        <div v-if="totalSavingsKobo > 0" class="summary-row summary-row--savings">
+          <span class="summary-label">Promotional savings</span>
+          <span class="summary-value">-{{ formatNaira(totalSavingsKobo) }}</span>
+        </div>
+        <div class="summary-row summary-row--total">
           <span class="summary-label">Subtotal</span>
           <span class="summary-value">{{ formatNaira(subtotalKobo) }}</span>
         </div>
@@ -130,8 +164,43 @@ const { lines, itemCount, subtotalKobo, setQuantity, remove, clear } = useCart()
 }
 
 .line-meta {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
   font-size: 0.8rem;
   color: var(--color-secondary);
+}
+
+.line-price-discounted {
+  font-family: var(--font-label);
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.line-price-original {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  color: var(--color-secondary);
+}
+
+.line-discount-tag {
+  display: inline-block;
+  padding: 1px 4px;
+  border-radius: var(--rounded-sm);
+  background-color: color-mix(in srgb, var(--color-secondary) 22%, transparent);
+  border: 1px solid var(--color-border);
+  color: var(--color-primary);
+  font-family: var(--font-label);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.line-savings {
+  font-family: var(--font-label);
+  font-size: 0.75rem;
+  color: var(--color-secondary);
+  margin: 3px 0 0 0;
 }
 
 .qty-input {
@@ -198,6 +267,16 @@ const { lines, itemCount, subtotalKobo, setQuantity, remove, clear } = useCart()
 
 .summary-muted {
   color: var(--color-secondary);
+}
+
+.summary-row--savings {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.summary-row--savings .summary-value {
+  color: var(--color-primary);
+  font-weight: 600;
 }
 
 .checkout-cta {

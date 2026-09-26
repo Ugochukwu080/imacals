@@ -44,6 +44,16 @@ impl ProductService {
         let min_order_qty = schema.min_order_quantity.unwrap_or(1).max(1);
         let in_stock = schema.in_stock.unwrap_or(true);
 
+        // Validate discount pricing if provided
+        if let Some(discount) = schema.discount_price_kobo {
+            if discount <= 0 || discount >= schema.unit_price_kobo {
+                return Err(ErrorBag::Validation {
+                    field: "discount_price_kobo".into(),
+                    message: "Discount price must be greater than zero and strictly less than the regular unit price".into(),
+                });
+            }
+        }
+
         let product = ProductRepository::create(
             pool,
             organization_id,
@@ -55,6 +65,7 @@ impl ProductService {
             schema.description.as_deref(),
             &schema.unit,
             schema.unit_price_kobo,
+            schema.discount_price_kobo,
             min_order_qty,
             in_stock,
         )
@@ -127,6 +138,30 @@ impl ProductService {
                 });
             }
             product.unit_price_kobo = price;
+        }
+
+        if let Some(ref discount_opt) = schema.discount_price_kobo {
+            match discount_opt {
+                Some(discount) => {
+                    if *discount <= 0 || *discount >= product.unit_price_kobo {
+                        return Err(ErrorBag::Validation {
+                            field: "discount_price_kobo".into(),
+                            message: "Discount price must be greater than zero and strictly less than the regular unit price".into(),
+                        });
+                    }
+                    product.discount_price_kobo = Some(*discount);
+                }
+                None => {
+                    product.discount_price_kobo = None;
+                }
+            }
+        } else if let Some(existing_discount) = product.discount_price_kobo {
+            if existing_discount >= product.unit_price_kobo {
+                return Err(ErrorBag::Validation {
+                    field: "discount_price_kobo".into(),
+                    message: "Existing discount price cannot be greater than or equal to new unit price".into(),
+                });
+            }
         }
 
         if let Some(moq) = schema.min_order_quantity {

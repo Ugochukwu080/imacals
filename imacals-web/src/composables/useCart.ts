@@ -1,5 +1,5 @@
 import { ref, computed, type Ref, type ComputedRef } from 'vue';
-import type { Product } from '@/services/catalog';
+import { effectivePriceKobo, discountSavingsKobo, type Product } from '@/services/catalog';
 
 export interface CartLine {
   product: Product;
@@ -32,6 +32,8 @@ export function useCart(): {
   lines: Ref<CartLine[]>;
   itemCount: ComputedRef<number>;
   subtotalKobo: ComputedRef<number>;
+  originalSubtotalKobo: ComputedRef<number>;
+  totalSavingsKobo: ComputedRef<number>;
   add: (product: Product, quantity?: number) => void;
   setQuantity: (productId: string, quantity: number) => void;
   remove: (productId: string) => void;
@@ -41,8 +43,17 @@ export function useCart(): {
     lines.value.reduce((sum, l) => sum + l.quantity, 0),
   );
 
+  // Subtotal is always summed over the effective selling price (promotional discount price if set).
   const subtotalKobo: ComputedRef<number> = computed<number>(() =>
+    lines.value.reduce((sum, l) => sum + effectivePriceKobo(l.product) * l.quantity, 0),
+  );
+
+  const originalSubtotalKobo: ComputedRef<number> = computed<number>(() =>
     lines.value.reduce((sum, l) => sum + l.product.unit_price_kobo * l.quantity, 0),
+  );
+
+  const totalSavingsKobo: ComputedRef<number> = computed<number>(() =>
+    lines.value.reduce((sum, l) => sum + discountSavingsKobo(l.product) * l.quantity, 0),
   );
 
   // Adding an item already in the cart tops up its quantity instead of duplicating the line.
@@ -79,5 +90,15 @@ export function useCart(): {
     persist();
   }
 
-  return { lines, itemCount, subtotalKobo, add, setQuantity, remove, clear };
+  return {
+    lines,
+    itemCount,
+    subtotalKobo,
+    originalSubtotalKobo,
+    totalSavingsKobo,
+    add,
+    setQuantity,
+    remove,
+    clear,
+  };
 }

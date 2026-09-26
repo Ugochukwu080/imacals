@@ -3,14 +3,14 @@ import { ref, computed, onMounted, watch, type Ref, type ComputedRef } from 'vue
 import { RouterLink } from 'vue-router';
 import { useCart } from '@/composables/useCart';
 import { useAuth } from '@/composables/useAuth';
-import { formatNaira } from '@/services/catalog';
+import { formatNaira, effectivePriceKobo, discountSavingsKobo } from '@/services/catalog';
 import { orderService, type PlaceOrderInput, type PlacedOrder } from '@/services/order';
 import { customerAddressService, type CustomerAddress } from '@/services/customerAddress';
 import { customerOrderService } from '@/services/customerOrder';
 import { ApiException } from '@/services/api';
 import { SITE } from '@/site';
 
-const { lines, subtotalKobo, clear } = useCart();
+const { lines, subtotalKobo, originalSubtotalKobo, totalSavingsKobo, clear } = useCart();
 const { user, isAuthenticated, updateProfile } = useAuth();
 
 const form: Ref<Omit<PlaceOrderInput, 'lines'>> = ref({
@@ -102,7 +102,9 @@ async function submit(): Promise<void> {
         name: l.product.name,
         slug: l.product.slug,
         unit: l.product.unit,
-        unit_price_kobo: l.product.unit_price_kobo,
+        unit_price_kobo: effectivePriceKobo(l.product),
+        original_unit_price_kobo: l.product.unit_price_kobo,
+        discount_kobo: discountSavingsKobo(l.product),
       }));
       await customerOrderService.recordPlacedOrder(
         result,
@@ -277,7 +279,17 @@ async function submit(): Promise<void> {
 
           <div v-for="line in lines" :key="line.product.id" class="summary-row">
             <span class="summary-label">{{ line.quantity }} × {{ line.product.name }}</span>
-            <span class="summary-value">{{ formatNaira(line.product.unit_price_kobo * line.quantity) }}</span>
+            <span class="summary-value">{{ formatNaira(effectivePriceKobo(line.product) * line.quantity) }}</span>
+          </div>
+
+          <div v-if="totalSavingsKobo > 0" class="summary-row">
+            <span class="summary-label">Regular subtotal</span>
+            <span class="summary-value"><del>{{ formatNaira(originalSubtotalKobo) }}</del></span>
+          </div>
+
+          <div v-if="totalSavingsKobo > 0" class="summary-row summary-row--savings">
+            <span class="summary-label">Promotional savings</span>
+            <span class="summary-value">-{{ formatNaira(totalSavingsKobo) }}</span>
           </div>
 
           <div class="summary-row summary-row--total">
@@ -489,5 +501,15 @@ async function submit(): Promise<void> {
   width: 16px;
   height: 16px;
   cursor: pointer;
+}
+
+.summary-row--savings {
+  color: var(--color-primary);
+  font-weight: 500;
+}
+
+.summary-row--savings .summary-value {
+  color: var(--color-primary);
+  font-weight: 600;
 }
 </style>

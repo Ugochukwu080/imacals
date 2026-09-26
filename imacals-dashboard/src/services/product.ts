@@ -20,6 +20,8 @@ export interface Product {
   description: string | null;
   unit: string;
   unit_price_kobo: number;
+  discount_price_kobo?: number | null;
+  discount_percent?: number | null;
   min_order_quantity: number;
   in_stock: boolean;
   image_url: string | null;
@@ -34,6 +36,7 @@ export interface CreateProductPayload {
   category_id: string;
   unit: string;
   unit_price_kobo: number;
+  discount_price_kobo?: number | null;
   min_order_quantity?: number;
   in_stock?: boolean;
   description?: string;
@@ -46,6 +49,7 @@ export interface UpdateProductPayload {
   category_id?: string;
   unit?: string;
   unit_price_kobo?: number;
+  discount_price_kobo?: number | null;
   min_order_quantity?: number;
   in_stock?: boolean;
   description?: string;
@@ -59,6 +63,19 @@ export function formatNaira(kobo: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(Math.round(kobo / 100));
+}
+
+export function getEffectivePriceKobo(prod: { unit_price_kobo: number; discount_price_kobo?: number | null }): number {
+  return prod.discount_price_kobo && prod.discount_price_kobo > 0 && prod.discount_price_kobo < prod.unit_price_kobo
+    ? prod.discount_price_kobo
+    : prod.unit_price_kobo;
+}
+
+export function getDiscountPercent(prod: { unit_price_kobo: number; discount_price_kobo?: number | null }): number | null {
+  if (!prod.discount_price_kobo || prod.discount_price_kobo <= 0 || prod.discount_price_kobo >= prod.unit_price_kobo) {
+    return null;
+  }
+  return Math.round(((prod.unit_price_kobo - prod.discount_price_kobo) / prod.unit_price_kobo) * 100);
 }
 
 export const productService = {

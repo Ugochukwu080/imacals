@@ -341,10 +341,21 @@ async function deleteAddress(id: string): Promise<void> {
 }
 
 // Re-order past order lines
+function orderPromotionalSavingsKobo(order?: CustomerOrder | null): number {
+  if (!order?.items) return 0;
+  return order.items.reduce((acc, item) => {
+    if (item.original_unit_price_kobo && item.original_unit_price_kobo > item.unit_price_kobo) {
+      return acc + (item.original_unit_price_kobo - item.unit_price_kobo) * item.quantity;
+    }
+    return acc;
+  }, 0);
+}
+
 async function reorder(order: CustomerOrder): Promise<void> {
   let count = 0;
   for (const item of order.items) {
     try {
+      const isDiscountedLine = !!(item.original_unit_price_kobo && item.original_unit_price_kobo > item.unit_price_kobo);
       const prod: Product = {
         id: item.product_id,
         slug: item.slug || 'product',
@@ -353,7 +364,8 @@ async function reorder(order: CustomerOrder): Promise<void> {
         category_slug: 'foodstuff',
         category_name: 'Catalogue Item',
         unit: item.unit,
-        unit_price_kobo: item.unit_price_kobo,
+        unit_price_kobo: isDiscountedLine ? (item.original_unit_price_kobo as number) : item.unit_price_kobo,
+        discount_price_kobo: isDiscountedLine ? item.unit_price_kobo : undefined,
         min_order_quantity: 1,
         in_stock: true,
         image_url: null,
@@ -906,6 +918,9 @@ onUnmounted(() => {
               <div class="order-total-block">
                 <span class="total-label">Total Amount</span>
                 <span class="total-amount">{{ formatNaira(order.total_kobo) }}</span>
+                <span v-if="orderPromotionalSavingsKobo(order) > 0" class="order-promo-saved">
+                  Saved {{ formatNaira(orderPromotionalSavingsKobo(order)) }}
+                </span>
               </div>
 
               <div class="order-actions-group">
@@ -1229,9 +1244,18 @@ onUnmounted(() => {
               <div class="item-name-cell">
                 <strong>{{ item.name }}</strong>
                 <span class="item-unit-tag">Unit: {{ item.unit }}</span>
+                <span v-if="item.original_unit_price_kobo && item.original_unit_price_kobo > item.unit_price_kobo" class="modal-promo-tag">
+                  Promo deal
+                </span>
               </div>
               <span class="text-right">{{ item.quantity }}</span>
-              <span class="text-right mono-num">{{ formatNaira(item.unit_price_kobo) }}</span>
+              <span class="text-right mono-num">
+                <template v-if="item.original_unit_price_kobo && item.original_unit_price_kobo > item.unit_price_kobo">
+                  <span class="item-strikethrough">{{ formatNaira(item.original_unit_price_kobo) }}</span>
+                  <br />
+                </template>
+                {{ formatNaira(item.unit_price_kobo) }}
+              </span>
               <span class="text-right mono-num">{{ formatNaira(item.unit_price_kobo * item.quantity) }}</span>
             </div>
 
@@ -1240,6 +1264,10 @@ onUnmounted(() => {
               <span class="text-right mono-num">
                 {{ formatNaira(selectedOrder.total_kobo - selectedOrder.delivery_fee_kobo) }}
               </span>
+            </div>
+            <div v-if="orderPromotionalSavingsKobo(selectedOrder) > 0" class="table-summary-row promo-savings-row">
+              <span>Promotional Savings</span>
+              <span class="text-right mono-num promo-savings-val">-{{ formatNaira(orderPromotionalSavingsKobo(selectedOrder)) }}</span>
             </div>
             <div class="table-summary-row">
               <span>Delivery Fee (Aba dispatch)</span>
@@ -2314,6 +2342,19 @@ onUnmounted(() => {
   color: var(--color-primary);
 }
 
+.order-promo-saved {
+  font-family: var(--font-label);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #1a4d1a;
+  background-color: var(--color-tertiary);
+  padding: 1px 6px;
+  border-radius: var(--rounded-sm);
+  display: inline-block;
+  margin-top: 2px;
+  width: fit-content;
+}
+
 .order-actions-group {
   display: flex;
   gap: 6px;
@@ -2789,6 +2830,34 @@ onUnmounted(() => {
 
 .grand-total {
   font-size: 1.05rem;
+}
+
+.modal-promo-tag {
+  font-family: var(--font-label);
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #1a4d1a;
+  background-color: var(--color-tertiary);
+  padding: 1px 5px;
+  border-radius: var(--rounded-sm);
+  width: fit-content;
+  margin-top: 2px;
+}
+
+.item-strikethrough {
+  text-decoration: line-through;
+  color: var(--color-secondary);
+  font-size: 0.75rem;
+}
+
+.promo-savings-row {
+  color: #1a4d1a;
+}
+
+.promo-savings-val {
+  color: #1a4d1a;
+  font-weight: 600;
 }
 
 .modal-dest-box {

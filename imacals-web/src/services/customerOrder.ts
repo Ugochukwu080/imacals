@@ -16,6 +16,8 @@ export interface CustomerOrderItem {
   unit: string;
   quantity: number;
   unit_price_kobo: number;
+  original_unit_price_kobo?: number;
+  discount_kobo?: number;
 }
 
 export interface CustomerOrderStatusHistory {
@@ -297,7 +299,15 @@ export const customerOrderService = {
       note?: string;
       lines: { product_id: string; quantity: number }[];
     },
-    catalogProducts: { id: string; name: string; slug: string; unit: string; unit_price_kobo: number }[],
+    catalogProducts: {
+      id: string;
+      name: string;
+      slug: string;
+      unit: string;
+      unit_price_kobo: number;
+      original_unit_price_kobo?: number;
+      discount_kobo?: number;
+    }[],
     userId?: string,
   ): Promise<CustomerOrder> {
     const list = await this.listOrders(userId);
@@ -310,6 +320,8 @@ export const customerOrderService = {
         unit: prod?.unit || 'unit',
         quantity: line.quantity,
         unit_price_kobo: prod?.unit_price_kobo || 0,
+        original_unit_price_kobo: prod?.original_unit_price_kobo,
+        discount_kobo: prod?.discount_kobo,
       };
     });
 

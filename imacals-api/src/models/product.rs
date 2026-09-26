@@ -18,6 +18,8 @@ pub struct Product {
     pub unit: String,
     // Kobo, never naira: integer money is the only kind that survives arithmetic without rounding drift.
     pub unit_price_kobo: i64,
+    // Promotional slash price in integer kobo. Must be less than unit_price_kobo when present.
+    pub discount_price_kobo: Option<i64>,
     // Wholesale lines often cannot be bought as singles.
     pub min_order_quantity: i32,
     pub in_stock: bool,
@@ -25,6 +27,25 @@ pub struct Product {
     pub updated_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub deleted_at: Option<DateTime<Utc>>,
+}
+
+impl Product {
+    // The price to actually charge: promotional discount price if present, else regular unit price.
+    pub fn effective_price_kobo(&self) -> i64 {
+        self.discount_price_kobo.unwrap_or(self.unit_price_kobo)
+    }
+
+    // Percentage discount off unit price rounded to nearest whole percent.
+    pub fn discount_percent(&self) -> Option<i32> {
+        self.discount_price_kobo.map(|discount| {
+            if self.unit_price_kobo > 0 {
+                let diff = self.unit_price_kobo - discount;
+                ((diff as f64 / self.unit_price_kobo as f64) * 100.0).round() as i32
+            } else {
+                0
+            }
+        })
+    }
 }
 
 // Image attachment representation for a product.
@@ -47,6 +68,8 @@ pub struct CatalogProduct {
     pub category_name: String,
     pub unit: String,
     pub unit_price_kobo: i64,
+    pub discount_price_kobo: Option<i64>,
+    pub discount_percent: Option<i32>,
     pub min_order_quantity: i32,
     pub in_stock: bool,
     pub image_url: Option<String>,
@@ -69,6 +92,8 @@ pub struct AdminProduct {
     pub description: Option<String>,
     pub unit: String,
     pub unit_price_kobo: i64,
+    pub discount_price_kobo: Option<i64>,
+    pub discount_percent: Option<i32>,
     pub min_order_quantity: i32,
     pub in_stock: bool,
     pub image_url: Option<String>,
@@ -92,6 +117,7 @@ pub struct CreateProductSchema {
     pub unit: String,
     #[validate(range(min = 1, message = "Price must be greater than zero kobo"))]
     pub unit_price_kobo: i64,
+    pub discount_price_kobo: Option<i64>,
     pub min_order_quantity: Option<i32>,
     pub in_stock: Option<bool>,
 }
@@ -108,6 +134,7 @@ pub struct UpdateProductSchema {
     pub description: Option<String>,
     pub unit: Option<String>,
     pub unit_price_kobo: Option<i64>,
+    pub discount_price_kobo: Option<Option<i64>>,
     pub min_order_quantity: Option<i32>,
     pub in_stock: Option<bool>,
 }
@@ -123,7 +150,7 @@ mod tests {
     }
 
     #[test]
-    fn create_product_schema_accepts_valid_payload() {
+    fn create_product_schema_accepts_valid_payload_with_discount() {
         let json = serde_json::json!({
             "category_id": "00000000-0000-0000-0000-000000000001",
             "name": "Long Grain Rice — 50kg Bag",
@@ -131,6 +158,7 @@ mod tests {
             "description": "Parboiled long grain rice",
             "unit": "bag (50kg)",
             "unit_price_kobo": 8950000,
+            "discount_price_kobo": 8200000,
             "min_order_quantity": 5,
             "in_stock": true
         });
@@ -140,6 +168,7 @@ mod tests {
         let valid = schema.unwrap();
         assert!(valid.validate().is_ok());
         assert_eq!(valid.unit_price_kobo, 8950000);
+        assert_eq!(valid.discount_price_kobo, Some(8200000));
     }
 
     #[test]
@@ -154,5 +183,30 @@ mod tests {
 
         let schema: CreateProductSchema = serde_json::from_value(json).unwrap();
         assert!(schema.validate().is_err());
+    }
+
+    #[test]
+    fn product_effective_price_and_discount_percent() {
+        let p = Product {
+            id: Uuid::new_v4(),
+            organization_id: Uuid::new_v4(),
+            domain_id: Uuid::new_v4(),
+            category_id: Uuid::new_v4(),
+            created_by: Uuid::new_v4(),
+            name: "Long Grain Rice".into(),
+            slug: "rice".into(),
+            description: None,
+            unit: "bag".into(),
+            unit_price_kobo: 1000000, // ₦10,000
+            discount_price_kobo: Some(800000), // ₦8,000 (20% off)
+            min_order_quantity: 1,
+            in_stock: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            deleted_at: None,
+        };
+
+        assert_eq!(p.effective_price_kobo(), 800000);
+        assert_eq!(p.discount_percent(), Some(20));
     }
 }

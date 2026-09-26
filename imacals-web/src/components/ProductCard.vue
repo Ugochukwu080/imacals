@@ -2,7 +2,7 @@
 import { ref, type Ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { RouterLink } from 'vue-router';
-import { formatNaira, type Product } from '@/services/catalog';
+import { formatNaira, effectivePriceKobo, discountPercent, isDiscounted, type Product } from '@/services/catalog';
 import { useWishlist } from '@/composables/useWishlist';
 import { useAuth } from '@/composables/useAuth';
 
@@ -49,6 +49,7 @@ async function saveToWishlist(): Promise<void> {
       <img v-if="product.image_url" :src="product.image_url" :alt="product.name" class="card-img" />
       <!-- No photography yet: the initial keeps the grid rhythm without a broken-image box. -->
       <span v-else class="card-placeholder" aria-hidden="true">{{ product.name.charAt(0) }}</span>
+      <span v-if="isDiscounted(product)" class="card-discount-badge">-{{ discountPercent(product) }}%</span>
     </RouterLink>
 
     <button
@@ -69,7 +70,13 @@ async function saveToWishlist(): Promise<void> {
       </h3>
 
       <p class="card-price">
-        {{ formatNaira(product.unit_price_kobo) }}
+        <template v-if="isDiscounted(product)">
+          <span class="card-price-current">{{ formatNaira(effectivePriceKobo(product)) }}</span>
+          <del class="card-price-original">{{ formatNaira(product.unit_price_kobo) }}</del>
+        </template>
+        <template v-else>
+          {{ formatNaira(product.unit_price_kobo) }}
+        </template>
         <span class="card-unit">/ {{ product.unit }}</span>
       </p>
 
@@ -169,10 +176,40 @@ async function saveToWishlist(): Promise<void> {
   border-bottom: 1px solid var(--color-primary);
 }
 
+.card-discount-badge {
+  position: absolute;
+  top: var(--spacing-sm);
+  left: var(--spacing-sm);
+  z-index: 1;
+  padding: 3px 7px;
+  border-radius: var(--rounded-sm);
+  background-color: var(--color-surface);
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
+  font-family: var(--font-label);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .card-price {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
   font-family: var(--font-label);
   font-size: 1rem;
   color: var(--color-primary);
+}
+
+.card-price-current {
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.card-price-original {
+  font-size: 0.8125rem;
+  color: var(--color-secondary);
 }
 
 .card-unit {
