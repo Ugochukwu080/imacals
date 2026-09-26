@@ -116,13 +116,13 @@ the storefront already assumes. `imacals-web` calls `/catalog/products`, `/catal
 | Table | Status | Notes |
 |---|---|---|
 | `categories` | Built | Domain-scoped with soft delete and slug indexing. |
-| `products` | Built | Tenant & domain-scoped (`unit_price_kobo`, `unit`, `min_order_quantity`, `in_stock`, image file link). |
+| `products` | Built | Tenant & domain-scoped (`unit_price_kobo`, optional `discount_price_kobo`, `unit`, `min_order_quantity`, `in_stock`, image file link). |
 | `warehouses` | To build | The Aba base warehouse is the first row. Orders are picked from a warehouse. |
 | `stock_levels` | To build | Per `(product_id, warehouse_id)`. Never a bare column on `products`. |
 | `customers` | Built | Tenant-scoped buyer record. `user_id` links to the storefront account when one exists; phone-only customers have `user_id = NULL`. |
 | `customer_addresses` | To build | Multiple per customer; one default. |
 | `orders` | To build | Carries `channel` (`online` \| `phone`), `reference`, `status`, totals, warehouse. |
-| `order_items` | To build | Line snapshot: unit price copied at order time so later price changes never rewrite history. |
+| `order_items` | To build | Line snapshot: unit price copied at order time so later price changes never rewrite history. Carries `original_unit_price_kobo` and `discount_kobo` when discounted. |
 | `order_status_history` | To build | Append-only. One row per transition, with actor and timestamp. |
 | `delivery_zones` | To build | Ties a geographic area to a tariff. Should reuse `polygons` / `zones`. |
 | `delivery_fees` | To build | Fee per zone, per weight or value band. |
@@ -134,6 +134,19 @@ the storefront already assumes. `imacals-web` calls `/catalog/products`, `/catal
 
 - **Money is an integer count of kobo** (₦1 = 100 kobo) everywhere it crosses the wire. No floats,
   no decimal strings in JSON. `imacals-web` sums cart and order totals as integers on that promise.
+- **Promotional discount pricing (`discount_price_kobo`)**: Products can carry an optional promotional discount price
+  in kobo. When configured, database constraint `chk_products_discount_less_than_unit_price` enforces
+  `0 < discount_price_kobo < unit_price_kobo`. Effective selling price resolves to `discount_price_kobo ?? unit_price_kobo`.
+  The discount percentage is computed as `((unit_price_kobo - discount_price_kobo) * 100) / unit_price_kobo`.
+- **Catalogue & Card display**: Discounted products render a `-X%` pill badge, bold effective price, and strike-through
+  original base price. Customers can filter the catalogue for "Promotions & Deals" and sort by effective price.
+- **Cart & Checkout calculations**: Line items compute totals from the effective price. Cart and checkout views display
+  itemized line savings ("Save ₦..."), strikethrough original prices, and an explicit "Promotional savings" summary deduction.
+- **Order items audit parity**: Order items snapshot both effective unit price and `original_unit_price_kobo` / `discount_kobo`,
+  ensuring phone orders (Aba order desk) and online customer checkout preserve exact discount savings across receipts,
+  tracking, and re-orders.
+- **Admin management**: In `imacals-dashboard`, staff can configure promotional pricing with live savings and percentage
+  preview calculations. Product listings highlight active deals with discount pills and struck-through original prices.
 - **`min_order_quantity` is real.** Wholesale lines cannot be bought below it. The cart drops a line
   rather than let its quantity fall under the minimum, and the API must reject one that does.
 - **Prices are re-resolved server side at order time.** The client sends `product_id` and
@@ -143,7 +156,7 @@ the storefront already assumes. `imacals-web` calls `/catalog/products`, `/catal
 - **Delivery fee is quoted at checkout**, not in the cart, because it depends on the destination.
 - **Customer dashboard (`/account`)**: Unified portal for customers at `imacals.com`. Displays account
   overview, live metrics, active order tracker spotlight with Aba warehouse dispatch progress, order book
-  (both online checkout and Aba order desk phone orders with status history, receipts, and 1-click re-order),
+  (both online checkout and Aba order desk phone orders with status history, receipts, promotional savings, and 1-click re-order),
   saved delivery address book with default selection and Aba/regional landmarks, wishlists overview, and
   customer contact profile.
 
