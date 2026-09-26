@@ -40,6 +40,9 @@ export interface CustomerOrder {
   note?: string;
   total_kobo: number;
   delivery_fee_kobo: number;
+  tax_kobo?: number;
+  shipping_method?: string;
+  shipping_zone_name?: string;
   placed_at: string;
   items: CustomerOrderItem[];
   history: CustomerOrderStatusHistory[];
@@ -64,8 +67,11 @@ const DEFAULT_SEEDED_ORDERS: CustomerOrder[] = [
     city: 'Aba',
     state: 'Abia State',
     note: 'Call when approaching Faulks road intersection.',
-    total_kobo: 44_750_000,
-    delivery_fee_kobo: 350_000,
+    total_kobo: 45_000_000,
+    delivery_fee_kobo: 250_000,
+    tax_kobo: 0,
+    shipping_method: 'standard',
+    shipping_zone_name: 'Aba Urban Distribution Zone',
     placed_at: new Date(Date.now() - 4 * 3600000).toISOString(),
     items: [
       {
@@ -112,8 +118,11 @@ const DEFAULT_SEEDED_ORDERS: CustomerOrder[] = [
     city: 'Aba',
     state: 'Abia State',
     note: 'Phone order entered directly by Aba Order Desk.',
-    total_kobo: 16_500_000,
-    delivery_fee_kobo: 300_000,
+    total_kobo: 17_665_000,
+    delivery_fee_kobo: 250_000,
+    tax_kobo: 1_215_000,
+    shipping_method: 'standard',
+    shipping_zone_name: 'Aba Urban Distribution Zone',
     placed_at: new Date(Date.now() - 2 * 86400000).toISOString(),
     items: [
       {
@@ -158,8 +167,11 @@ const DEFAULT_SEEDED_ORDERS: CustomerOrder[] = [
     delivery_address: 'Commercial Layout, Aba-Owerri Road',
     city: 'Aba',
     state: 'Abia State',
-    total_kobo: 18_000_000,
+    total_kobo: 19_342_000,
     delivery_fee_kobo: 250_000,
+    tax_kobo: 1_332_000,
+    shipping_method: 'standard',
+    shipping_zone_name: 'Aba Urban Distribution Zone',
     placed_at: new Date(Date.now() - 7 * 86400000).toISOString(),
     items: [
       {
@@ -287,6 +299,9 @@ export const customerOrderService = {
       reference: string;
       total_kobo: number;
       delivery_fee_kobo?: number;
+      tax_kobo?: number;
+      shipping_method?: string;
+      shipping_zone_name?: string;
       status: string;
     },
     details: {
@@ -339,6 +354,9 @@ export const customerOrderService = {
       note: details.note,
       total_kobo: order.total_kobo,
       delivery_fee_kobo: order.delivery_fee_kobo || 0,
+      tax_kobo: order.tax_kobo ?? 0,
+      shipping_method: order.shipping_method || 'standard',
+      shipping_zone_name: order.shipping_zone_name,
       placed_at: new Date().toISOString(),
       items: newItems,
       history: [

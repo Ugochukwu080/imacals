@@ -7,10 +7,15 @@ import { formatNaira, effectivePriceKobo, discountSavingsKobo } from '@/services
 import { orderService, type PlaceOrderInput, type PlacedOrder } from '@/services/order';
 import { customerAddressService, type CustomerAddress } from '@/services/customerAddress';
 import { customerOrderService } from '@/services/customerOrder';
+import {
+  computeOrderPricing,
+  type ShippingMethod,
+  type OrderPricingBreakdown,
+} from '@/services/shipping';
 import { ApiException } from '@/services/api';
 import { SITE } from '@/site';
 
-const { lines, subtotalKobo, originalSubtotalKobo, totalSavingsKobo, clear } = useCart();
+const { lines, clear } = useCart();
 const { user, isAuthenticated, updateProfile } = useAuth();
 
 const form: Ref<Omit<PlaceOrderInput, 'lines'>> = ref({
@@ -21,6 +26,17 @@ const form: Ref<Omit<PlaceOrderInput, 'lines'>> = ref({
   city: '',
   state: 'Abia State',
   note: '',
+});
+
+const selectedShippingMethod: Ref<ShippingMethod> = ref('standard');
+
+const pricingBreakdown: ComputedRef<OrderPricingBreakdown> = computed(() => {
+  return computeOrderPricing(
+    lines.value,
+    form.value.state,
+    form.value.city,
+    selectedShippingMethod.value,
+  );
 });
 
 const saveAddressToDashboard: Ref<boolean> = ref(true);
@@ -87,13 +103,23 @@ async function submit(): Promise<void> {
   error.value      = null;
   submitting.value = true;
   try {
+    const pricing = pricingBreakdown.value;
     const result = await orderService.place({
       ...form.value,
+      shipping_method: selectedShippingMethod.value,
+      delivery_fee_kobo: pricing.shipping_fee_kobo,
+      tax_kobo: pricing.tax_kobo,
       email: form.value.email?.trim() || undefined,
       note: form.value.note?.trim() || undefined,
       lines: lines.value.map((l) => ({ product_id: l.product.id, quantity: l.quantity })),
     });
-    placed.value = result;
+    placed.value = {
+      ...result,
+      total_kobo: pricing.total_kobo,
+      delivery_fee_kobo: pricing.shipping_fee_kobo,
+      tax_kobo: pricing.tax_kobo,
+      shipping_method: selectedShippingMethod.value,
+    };
 
     // Record order to customer dashboard
     try {
@@ -107,7 +133,10 @@ async function submit(): Promise<void> {
         discount_kobo: discountSavingsKobo(l.product),
       }));
       await customerOrderService.recordPlacedOrder(
-        result,
+        {
+          ...placed.value,
+          shipping_zone_name: pricing.shipping_zone_label,
+        },
         {
           ...form.value,
           lines: lines.value.map((l) => ({ product_id: l.product.id, quantity: l.quantity })),
@@ -172,9 +201,9 @@ async function submit(): Promise<void> {
     <div v-if="placed" class="confirmed">
       <p class="eyebrow">Order placed</p>
       <h1 class="section-title">Reference {{ placed.reference }}</h1>
-      <p class="confirmed-copy">
+          <p class="confirmed-copy">
         We have your order and the dispatch desk will call {{ form.phone }} to confirm delivery.
-        Total {{ formatNaira(placed.total_kobo) }}.
+        Total {{ formatNaira(placed.total_kobo) }} (includes {{ placed.tax_kobo ? formatNaira(placed.tax_kobo) : '₦0' }} VAT and {{ placed.delivery_fee_kobo > 0 ? formatNaira(placed.delivery_fee_kobo) : 'Free' }} delivery).
       </p>
       <div class="confirmed-actions">
         <RouterLink class="btn-primary confirmed-cta" to="/track">Track this order</RouterLink>
@@ -261,6 +290,60 @@ async function submit(): Promise<void> {
             </div>
           </div>
 
+          <!-- Shipping / Fulfilment Method Selection -->
+          <div class="shipping-section">
+            <div class="shipping-section-head">
+              <span class="eyebrow">Dispatch & Fulfilment</span>
+              <h2 class="shipping-section-title">Select delivery method from Aba Warehouse</h2>
+              <p class="shipping-zone-badge">
+                <span class="zone-pin">📍</span>
+                <span>Destination Zone: <strong>{{ pricingBreakdown.shipping_zone_label }}</strong> ({{ form.city || 'Aba' }}, {{ form.state }})</span>
+              </p>
+            </div>
+
+            <!-- Free Wholesale Threshold Notice -->
+            <div
+              v-if="pricingBreakdown.is_free_shipping"
+              class="free-shipping-unlocked"
+            >
+              🎉 <strong>Free Wholesale Delivery Unlocked!</strong> Your order qualifies for zero dispatch fees in {{ pricingBreakdown.shipping_zone_label }}.
+            </div>
+            <div
+              v-else-if="pricingBreakdown.subtotal_kobo > 0 && selectedShippingMethod !== 'pickup'"
+              class="free-shipping-progress"
+            >
+              Add <strong>{{ formatNaira(pricingBreakdown.free_shipping_threshold_kobo - pricingBreakdown.subtotal_kobo) }}</strong> more to unlock <strong>Free Wholesale Delivery</strong> in this zone.
+            </div>
+
+            <!-- Shipping Methods Grid -->
+            <div class="shipping-methods-grid">
+              <label
+                v-for="method in pricingBreakdown.available_methods"
+                :key="method.id"
+                class="shipping-method-card"
+                :class="{ 'shipping-method-card--selected': selectedShippingMethod === method.id }"
+              >
+                <input
+                  v-model="selectedShippingMethod"
+                  class="shipping-method-radio"
+                  type="radio"
+                  name="shipping_method"
+                  :value="method.id"
+                />
+                <div class="shipping-method-info">
+                  <div class="method-title-row">
+                    <span class="method-name">{{ method.name }}</span>
+                    <span class="method-fee" :class="{ 'method-fee--free': method.fee_kobo === 0 }">
+                      {{ method.fee_kobo === 0 ? 'FREE' : formatNaira(method.fee_kobo) }}
+                    </span>
+                  </div>
+                  <p class="method-desc">{{ method.description }}</p>
+                  <span class="method-eta">⏱ ETA: {{ method.estimated_delivery }}</span>
+                </div>
+              </label>
+            </div>
+          </div>
+
           <p v-if="error" class="form-error" role="alert">{{ error }}</p>
 
           <!-- The one Tertiary action on this screen. -->
@@ -275,32 +358,55 @@ async function submit(): Promise<void> {
         </form>
 
         <aside class="summary">
-          <h2 class="summary-title">Your order</h2>
+          <h2 class="summary-title">Order summary</h2>
 
           <div v-for="line in lines" :key="line.product.id" class="summary-row">
             <span class="summary-label">{{ line.quantity }} × {{ line.product.name }}</span>
             <span class="summary-value">{{ formatNaira(effectivePriceKobo(line.product) * line.quantity) }}</span>
           </div>
 
-          <div v-if="totalSavingsKobo > 0" class="summary-row">
+          <div v-if="pricingBreakdown.total_savings_kobo > 0" class="summary-row">
             <span class="summary-label">Regular subtotal</span>
-            <span class="summary-value"><del>{{ formatNaira(originalSubtotalKobo) }}</del></span>
+            <span class="summary-value"><del>{{ formatNaira(pricingBreakdown.original_subtotal_kobo) }}</del></span>
           </div>
 
-          <div v-if="totalSavingsKobo > 0" class="summary-row summary-row--savings">
+          <div v-if="pricingBreakdown.total_savings_kobo > 0" class="summary-row summary-row--savings">
             <span class="summary-label">Promotional savings</span>
-            <span class="summary-value">-{{ formatNaira(totalSavingsKobo) }}</span>
+            <span class="summary-value">-{{ formatNaira(pricingBreakdown.total_savings_kobo) }}</span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Items subtotal</span>
+            <span class="summary-value">{{ formatNaira(pricingBreakdown.subtotal_kobo) }}</span>
+          </div>
+
+          <div class="summary-row summary-row--tax">
+            <span class="summary-label">VAT (7.5% Nigerian Statutory)</span>
+            <span class="summary-value">
+              {{ pricingBreakdown.tax_kobo > 0 ? formatNaira(pricingBreakdown.tax_kobo) : '₦0 (Exempt)' }}
+            </span>
+          </div>
+          <div v-if="pricingBreakdown.exempt_subtotal_kobo > 0" class="tax-exempt-note">
+            Includes {{ formatNaira(pricingBreakdown.exempt_subtotal_kobo) }} in VAT-exempt raw agricultural foodstuff (0% VAT)
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">
+              Delivery ({{ selectedShippingMethod === 'express' ? 'Express Dispatch' : selectedShippingMethod === 'pickup' ? 'Warehouse Pickup' : 'Standard Dispatch' }})
+            </span>
+            <span class="summary-value" :class="{ 'summary-highlight': pricingBreakdown.shipping_fee_kobo === 0 }">
+              {{ pricingBreakdown.shipping_fee_kobo === 0 ? '₦0 (Free)' : formatNaira(pricingBreakdown.shipping_fee_kobo) }}
+            </span>
           </div>
 
           <div class="summary-row summary-row--total">
-            <span class="summary-label">Subtotal</span>
-            <span class="summary-value">{{ formatNaira(subtotalKobo) }}</span>
+            <span class="summary-label">Total to pay</span>
+            <span class="summary-value summary-value--total">{{ formatNaira(pricingBreakdown.total_kobo) }}</span>
           </div>
 
           <p class="summary-note">
-            Delivery is quoted once we have the destination — from
-            {{ SITE.warehouse.city }}, {{ SITE.coverage[0].eta.toLowerCase() }} within
-            {{ SITE.coverage[0].area.toLowerCase() }}.
+            Orders are picked and dispatched from our Aba central depot (Factory Rd).
+            Driver calls {{ form.phone || 'your phone number' }} before departure.
           </p>
         </aside>
       </div>
@@ -510,6 +616,161 @@ async function submit(): Promise<void> {
 
 .summary-row--savings .summary-value {
   color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* Shipping Fulfilment Selector */
+.shipping-section {
+  margin-top: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  padding: var(--spacing-md);
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+}
+
+.shipping-section-head {
+  margin-bottom: var(--spacing-sm);
+}
+
+.shipping-section-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin: 4px 0;
+}
+
+.shipping-zone-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  color: var(--color-secondary);
+  background-color: var(--color-neutral);
+  padding: 3px 8px;
+  border-radius: var(--rounded-sm);
+  border: 1px solid var(--color-divider);
+  margin-top: 4px;
+}
+
+.free-shipping-unlocked {
+  background-color: rgba(46, 125, 50, 0.08);
+  border: 1px solid rgba(46, 125, 50, 0.3);
+  color: #2e7d32;
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 8px 12px;
+  border-radius: var(--rounded-sm);
+  margin: 10px 0;
+}
+
+.free-shipping-progress {
+  background-color: rgba(22, 101, 52, 0.05);
+  border: 1px dashed var(--color-border);
+  color: var(--color-secondary);
+  font-size: 0.78rem;
+  padding: 8px 12px;
+  border-radius: var(--rounded-sm);
+  margin: 10px 0;
+}
+
+.shipping-methods-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.shipping-method-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--rounded-md);
+  background-color: var(--color-background);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+}
+
+.shipping-method-card:hover {
+  border-color: var(--color-primary);
+}
+
+.shipping-method-card--selected {
+  border-color: var(--color-primary);
+  background-color: var(--color-neutral);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+
+.shipping-method-radio {
+  margin-top: 3px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+
+.shipping-method-info {
+  flex: 1;
+}
+
+.method-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2px;
+}
+
+.method-name {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--color-primary);
+}
+
+.method-fee {
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: var(--color-primary);
+}
+
+.method-fee--free {
+  color: #2e7d32;
+}
+
+.method-desc {
+  font-size: 0.78rem;
+  color: var(--color-secondary);
+  margin: 2px 0 4px;
+  line-height: 1.35;
+}
+
+.method-eta {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-family: var(--font-label);
+  color: var(--color-secondary);
+  background-color: var(--color-surface);
+  padding: 2px 6px;
+  border-radius: var(--rounded-sm);
+  border: 1px solid var(--color-divider);
+}
+
+.tax-exempt-note {
+  font-size: 0.72rem;
+  color: var(--color-secondary);
+  padding: 3px 0 6px;
+  line-height: 1.3;
+}
+
+.summary-value--total {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.summary-highlight {
+  color: #2e7d32;
   font-weight: 600;
 }
 </style>

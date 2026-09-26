@@ -23,6 +23,10 @@ pub struct Product {
     // Wholesale lines often cannot be bought as singles.
     pub min_order_quantity: i32,
     pub in_stock: bool,
+    // Whether this product is exempt from Nigerian VAT (e.g. raw unprocessed foodstuff).
+    pub is_tax_exempt: bool,
+    // Statutory Nigerian VAT rate in basis points (750 = 7.50%).
+    pub tax_rate_basis_points: i32,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -45,6 +49,16 @@ impl Product {
                 0
             }
         })
+    }
+
+    // Line tax in integer kobo: 0 if tax exempt, else (effective_price * quantity * rate + 5000) / 10000.
+    pub fn line_tax_kobo(&self, quantity: i32) -> i64 {
+        if self.is_tax_exempt || self.tax_rate_basis_points <= 0 || quantity <= 0 {
+            0
+        } else {
+            let line_total = self.effective_price_kobo() * (quantity as i64);
+            (line_total * (self.tax_rate_basis_points as i64) + 5000) / 10000
+        }
     }
 }
 
@@ -72,6 +86,8 @@ pub struct CatalogProduct {
     pub discount_percent: Option<i32>,
     pub min_order_quantity: i32,
     pub in_stock: bool,
+    pub is_tax_exempt: bool,
+    pub tax_rate_basis_points: i32,
     pub image_url: Option<String>,
     #[serde(default)]
     pub images: Vec<String>,
@@ -96,6 +112,8 @@ pub struct AdminProduct {
     pub discount_percent: Option<i32>,
     pub min_order_quantity: i32,
     pub in_stock: bool,
+    pub is_tax_exempt: bool,
+    pub tax_rate_basis_points: i32,
     pub image_url: Option<String>,
     #[serde(default)]
     pub images: Vec<ProductImageDto>,
@@ -120,6 +138,8 @@ pub struct CreateProductSchema {
     pub discount_price_kobo: Option<i64>,
     pub min_order_quantity: Option<i32>,
     pub in_stock: Option<bool>,
+    pub is_tax_exempt: Option<bool>,
+    pub tax_rate_basis_points: Option<i32>,
 }
 
 // Payload sent by the dashboard when updating a product.
@@ -137,6 +157,8 @@ pub struct UpdateProductSchema {
     pub discount_price_kobo: Option<Option<i64>>,
     pub min_order_quantity: Option<i32>,
     pub in_stock: Option<bool>,
+    pub is_tax_exempt: Option<bool>,
+    pub tax_rate_basis_points: Option<i32>,
 }
 
 #[cfg(test)]

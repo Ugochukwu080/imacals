@@ -1260,9 +1260,9 @@ onUnmounted(() => {
             </div>
 
             <div class="table-summary-row">
-              <span>Subtotal</span>
+              <span>Items Subtotal</span>
               <span class="text-right mono-num">
-                {{ formatNaira(selectedOrder.total_kobo - selectedOrder.delivery_fee_kobo) }}
+                {{ formatNaira(selectedOrder.items.reduce((acc, it) => acc + it.unit_price_kobo * it.quantity, 0)) }}
               </span>
             </div>
             <div v-if="orderPromotionalSavingsKobo(selectedOrder) > 0" class="table-summary-row promo-savings-row">
@@ -1270,8 +1270,18 @@ onUnmounted(() => {
               <span class="text-right mono-num promo-savings-val">-{{ formatNaira(orderPromotionalSavingsKobo(selectedOrder)) }}</span>
             </div>
             <div class="table-summary-row">
-              <span>Delivery Fee (Aba dispatch)</span>
-              <span class="text-right mono-num">{{ formatNaira(selectedOrder.delivery_fee_kobo) }}</span>
+              <span>VAT (7.5% Nigerian Statutory)</span>
+              <span class="text-right mono-num">
+                {{ selectedOrder.tax_kobo != null && selectedOrder.tax_kobo > 0 ? formatNaira(selectedOrder.tax_kobo) : '₦0 (Exempt)' }}
+              </span>
+            </div>
+            <div class="table-summary-row">
+              <span>
+                Delivery Fee ({{ selectedOrder.shipping_method === 'express' ? 'Priority Express Dispatch' : selectedOrder.shipping_method === 'pickup' ? 'Faulks Rd Depot Pickup' : 'Standard Road Dispatch' }})
+              </span>
+              <span class="text-right mono-num">
+                {{ selectedOrder.delivery_fee_kobo > 0 ? formatNaira(selectedOrder.delivery_fee_kobo) : '₦0 (Free Wholesale)' }}
+              </span>
             </div>
             <div class="table-summary-row table-summary-row--grand">
               <span>Grand Total</span>

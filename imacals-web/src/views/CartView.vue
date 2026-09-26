@@ -16,6 +16,8 @@ const {
   subtotalKobo,
   originalSubtotalKobo,
   totalSavingsKobo,
+  taxKobo,
+  exemptSubtotalKobo,
   setQuantity,
   remove,
   clear,
@@ -98,6 +100,13 @@ const {
         <div class="summary-row summary-row--total">
           <span class="summary-label">Subtotal</span>
           <span class="summary-value">{{ formatNaira(subtotalKobo) }}</span>
+        </div>
+        <div class="summary-row summary-row--tax">
+          <span class="summary-label">Est. VAT (7.5%)</span>
+          <span class="summary-value">{{ taxKobo > 0 ? formatNaira(taxKobo) : '₦0 (Exempt)' }}</span>
+        </div>
+        <div v-if="exemptSubtotalKobo > 0" class="tax-exempt-note">
+          Includes {{ formatNaira(exemptSubtotalKobo) }} in VAT-exempt agricultural foodstuffs
         </div>
         <div class="summary-row">
           <span class="summary-label">Delivery</span>
@@ -277,6 +286,13 @@ const {
 .summary-row--savings .summary-value {
   color: var(--color-primary);
   font-weight: 600;
+}
+
+.tax-exempt-note {
+  font-size: 0.72rem;
+  color: var(--color-secondary);
+  padding: 4px 0 8px;
+  line-height: 1.3;
 }
 
 .checkout-cta {

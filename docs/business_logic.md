@@ -153,10 +153,25 @@ the storefront already assumes. `imacals-web` calls `/catalog/products`, `/catal
   `quantity` only. Never trust a price that arrived from a browser.
 - **`reference` is customer-facing** and is read aloud on the phone — short, unambiguous, no
   lookalike characters. Both channels get one from the same sequence.
-- **Delivery fee is quoted at checkout**, not in the cart, because it depends on the destination.
+- **Delivery fee and shipping calculations**:
+  - Dispatch is centralized from our base distribution warehouse in **Aba, Abia State**.
+  - **4 Regional Dispatch Zones**:
+    - `Aba Urban` (Aba North/South, Osisioma, Ugwunagbo, Obingwa, Ariaria, Faulks Rd): ₦2,500 base fee, free wholesale shipping for orders ≥ ₦300,000.
+    - `Abia Regional` (Umuahia, Ohafia, Arochukwu, etc.): ₦4,000 base fee, free wholesale shipping for orders ≥ ₦400,000.
+    - `South-East / South-South` (Imo, Rivers, Enugu, Anambra, Akwa Ibom, Delta, Bayelsa, Cross River): ₦6,500 base fee, free wholesale shipping for orders ≥ ₦500,000.
+    - `National` (All other Nigerian states): ₦10,000 base fee, free wholesale shipping for orders ≥ ₦750,000.
+  - **Shipping Methods**:
+    - `standard` (Standard Road Dispatch): Scheduled vehicle dispatch from Aba depot. Free when order meets zone threshold.
+    - `express` (Priority Express Dispatch): Expedited loading and transit (+₦2,500 priority fee).
+    - `pickup` (Aba Depot Self-Pickup): Free (₦0) collection at Faulks Road warehouse.
+- **Tax (VAT) calculations**:
+  - Nigerian statutory Value Added Tax is **7.50%** (`750` basis points).
+  - Unprocessed raw agricultural foodstuffs (such as raw rice, yam, unrefined bulk grains) are statutory **0% VAT-exempt** (`is_tax_exempt = true`).
+  - Manufactured, processed, packaged, and non-staple goods attract standard 7.5% VAT (`tax_rate_basis_points = 750`).
+  - Computed using integer basis points without floating-point drift: `(line_kobo * tax_rate_basis_points + 5000) / 10000`.
 - **Customer dashboard (`/account`)**: Unified portal for customers at `imacals.com`. Displays account
   overview, live metrics, active order tracker spotlight with Aba warehouse dispatch progress, order book
-  (both online checkout and Aba order desk phone orders with status history, receipts, promotional savings, and 1-click re-order),
+  (both online checkout and Aba order desk phone orders with status history, receipts with itemized VAT and shipping fee, promotional savings, and 1-click re-order),
   saved delivery address book with default selection and Aba/regional landmarks, wishlists overview, and
   customer contact profile.
 

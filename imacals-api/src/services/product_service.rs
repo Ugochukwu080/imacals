@@ -54,6 +54,9 @@ impl ProductService {
             }
         }
 
+        let is_tax_exempt = schema.is_tax_exempt.unwrap_or(false);
+        let tax_rate_basis_points = schema.tax_rate_basis_points.unwrap_or(750).max(0);
+
         let product = ProductRepository::create(
             pool,
             organization_id,
@@ -68,6 +71,8 @@ impl ProductService {
             schema.discount_price_kobo,
             min_order_qty,
             in_stock,
+            is_tax_exempt,
+            tax_rate_basis_points,
         )
         .await
         .map_err(|e| {
@@ -170,6 +175,14 @@ impl ProductService {
 
         if let Some(in_stock) = schema.in_stock {
             product.in_stock = in_stock;
+        }
+
+        if let Some(is_tax_exempt) = schema.is_tax_exempt {
+            product.is_tax_exempt = is_tax_exempt;
+        }
+
+        if let Some(tax_rate_basis_points) = schema.tax_rate_basis_points {
+            product.tax_rate_basis_points = tax_rate_basis_points.max(0);
         }
 
         ProductRepository::update(pool, &product)

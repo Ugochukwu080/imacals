@@ -1,5 +1,11 @@
 import { ref, computed, type Ref, type ComputedRef } from 'vue';
-import { effectivePriceKobo, discountSavingsKobo, type Product } from '@/services/catalog';
+import {
+  effectivePriceKobo,
+  discountSavingsKobo,
+  lineTaxKobo,
+  isTaxExempt,
+  type Product,
+} from '@/services/catalog';
 
 export interface CartLine {
   product: Product;
@@ -34,6 +40,9 @@ export function useCart(): {
   subtotalKobo: ComputedRef<number>;
   originalSubtotalKobo: ComputedRef<number>;
   totalSavingsKobo: ComputedRef<number>;
+  taxKobo: ComputedRef<number>;
+  taxableSubtotalKobo: ComputedRef<number>;
+  exemptSubtotalKobo: ComputedRef<number>;
   add: (product: Product, quantity?: number) => void;
   setQuantity: (productId: string, quantity: number) => void;
   remove: (productId: string) => void;
@@ -54,6 +63,23 @@ export function useCart(): {
 
   const totalSavingsKobo: ComputedRef<number> = computed<number>(() =>
     lines.value.reduce((sum, l) => sum + discountSavingsKobo(l.product) * l.quantity, 0),
+  );
+
+  // Statutory Nigerian VAT (7.5%) applied to taxable non-exempt lines.
+  const taxKobo: ComputedRef<number> = computed<number>(() =>
+    lines.value.reduce((sum, l) => sum + lineTaxKobo(l.product, l.quantity), 0),
+  );
+
+  const taxableSubtotalKobo: ComputedRef<number> = computed<number>(() =>
+    lines.value.reduce((sum, l) =>
+      isTaxExempt(l.product) ? sum : sum + effectivePriceKobo(l.product) * l.quantity,
+    0),
+  );
+
+  const exemptSubtotalKobo: ComputedRef<number> = computed<number>(() =>
+    lines.value.reduce((sum, l) =>
+      isTaxExempt(l.product) ? sum + effectivePriceKobo(l.product) * l.quantity : sum,
+    0),
   );
 
   // Adding an item already in the cart tops up its quantity instead of duplicating the line.
@@ -96,6 +122,9 @@ export function useCart(): {
     subtotalKobo,
     originalSubtotalKobo,
     totalSavingsKobo,
+    taxKobo,
+    taxableSubtotalKobo,
+    exemptSubtotalKobo,
     add,
     setQuantity,
     remove,
